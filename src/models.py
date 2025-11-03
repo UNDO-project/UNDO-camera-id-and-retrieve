@@ -1,4 +1,4 @@
-"""Camera data model."""
+"""Data models for CCTV camera information."""
 
 from typing import Any, Optional
 
