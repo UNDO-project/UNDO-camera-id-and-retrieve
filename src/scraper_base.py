@@ -4,7 +4,6 @@ import asyncio
 from abc import ABC, abstractmethod
 
 import httpx
-from loguru import logger
 
 from src.config import DEFAULT_HEADERS, get_random_delay
 from src.models.camera import CameraRecord, CategoryLink
@@ -41,13 +40,10 @@ class CameraScraperBase(ABC):
         :raises httpx.HTTPError: If request fails
         """
         delay = get_random_delay()
-        logger.debug(f"Waiting {delay:.1f}s before fetching {url}")
         await asyncio.sleep(delay)
 
-        logger.debug(f"Fetching {url}")
         response = await self.client.get(url)
         response.raise_for_status()
-        logger.debug(f"Successfully fetched {url} ({len(response.text)} bytes)")
         return response.text
 
     async def download_image(self, image_url: str) -> bytes:
@@ -59,13 +55,10 @@ class CameraScraperBase(ABC):
         :raises httpx.HTTPError: If download fails
         """
         delay = get_random_delay()
-        logger.debug(f"Waiting {delay:.1f}s before downloading image")
         await asyncio.sleep(delay)
 
-        logger.debug(f"Downloading image from {image_url}")
         response = await self.client.get(image_url)
         response.raise_for_status()
-        logger.debug(f"Downloaded image ({len(response.content)} bytes)")
         return response.content
 
     @abstractmethod

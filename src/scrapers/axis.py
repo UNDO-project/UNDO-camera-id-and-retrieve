@@ -55,49 +55,55 @@ class AxisCameraScraper(CameraScraperBase):
                     node_id=node_id,
                 )
                 categories.append(category)
-                logger.debug(f"Added category: {name}")
 
         logger.info(f"Found {len(categories)} camera categories")
         return categories
 
     async def fetch_cameras(self, category: CategoryLink) -> list[CameraRecord]:
         r"""
-        Fetch cameras within a specific category.
+        Fetch all products (series and individual) within a specific category.
+        Excludes collections/accessories sections.
 
         :param category: Category to scrape
-        :return: List of camera records
+        :return: List of camera records (one per nav-card element)
         """
         category_url = f"{AXIS_BASE_URL}{category.href}"
-        logger.info(f"Fetching cameras from category: {category.name}")
         html = await self.fetch_html(category_url)
         soup = BeautifulSoup(html, "html.parser")
 
         cameras = []
 
-        # Find all product cards in the category
-        product_cards = soup.find_all("a", class_="product-card")
-        logger.debug(f"Found {len(product_cards)} product cards")
+        # Find the "Products within" section specifically (exclude "Collections within")
+        for heading in soup.find_all("h3"):
+            if "Products within" in heading.get_text():
+                # Find the next nav-card__coll container
+                nav_coll = heading.find_next("div", class_="nav-card__coll")
+                if nav_coll:
+                    # Extract all nav-card elements from this container
+                    nav_cards = nav_coll.find_all("a", class_="nav-card")
+                    break
+        else:
+            # Fallback: if no "Products within" heading found, get all nav-cards
+            nav_cards = soup.find_all("a", class_="nav-card")
 
-        for idx, card in enumerate(product_cards):
+        for idx, card in enumerate(nav_cards):
             product_url = card.get("href")
-
             if not product_url:
                 continue
 
-            # Extract camera info from card
-            product_title = card.find("h3", class_="product-card__title")
-            product_name = (
-                product_title.get_text(strip=True) if product_title else f"Camera-{idx}"
-            )
+            # Extract product info from card
+            h4_tag = card.find("h4")
+            product_name = h4_tag.get_text(strip=True) if h4_tag else f"Product-{idx}"
 
-            product_desc = card.find("span", class_="product-card__tagline")
-            description = product_desc.get_text(strip=True) if product_desc else None
+            # Extract description
+            tagline_tag = card.find("span", class_="nav-card__tagline")
+            description = tagline_tag.get_text(strip=True) if tagline_tag else None
 
             # Extract image URL from picture/img
             img_tag = card.find("img")
             image_url = img_tag.get("src") if img_tag else None
 
-            # Create camera record
+            # Create camera record for all nav-card elements (series and individual products)
             camera = CameraRecord(
                 camera_id=f"axis-{category.name.lower().replace(' ', '-')}-{idx}",
                 model_name=product_name,
@@ -109,7 +115,6 @@ class AxisCameraScraper(CameraScraperBase):
                 category=category.name,
             )
             cameras.append(camera)
-            logger.debug(f"Added camera: {product_name}")
 
-        logger.info(f"Found {len(cameras)} cameras in {category.name}")
+        logger.info(f"Found {len(cameras)} products in {category.name}")
         return cameras
