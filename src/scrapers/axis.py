@@ -5,7 +5,7 @@ from loguru import logger
 
 from src.config import AXIS_BASE_URL, AXIS_PRODUCTS_URL
 from src.models.camera import CategoryLink
-from src.scraper_base import CameraScraperBase
+from src.scrapers.base import CameraScraperBase
 
 
 class AxisCameraScraper(CameraScraperBase):
