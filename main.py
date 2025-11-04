@@ -9,7 +9,7 @@ from src.scrapers.axis import AxisCameraScraper
 
 async def test_axis_scraper() -> None:
     r"""
-    Visit all categories and log all products in each category.
+    Visit all categories, then all product series within each category, then all individual products.
     """
     scraper = AxisCameraScraper()
     try:
@@ -17,8 +17,13 @@ async def test_axis_scraper() -> None:
 
         for category in categories:
             logger.info(f"Visiting category: {category.name}")
-            cameras = await scraper.fetch_cameras(category)
-            logger.info(f"  Products in {category.name}: {len(cameras)}")
+            series_list = await scraper.fetch_cameras(category)
+
+            for series in series_list:
+                logger.info(f"  Visiting series: {series.name}")
+                products = await scraper.fetch_products_in_series(series)
+                for product_url in products:
+                    logger.info(f"    Product: {product_url}")
 
     except Exception as e:
         logger.error(f"Error during scraping: {e}")

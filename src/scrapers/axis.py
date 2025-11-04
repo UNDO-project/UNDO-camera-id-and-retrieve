@@ -4,7 +4,7 @@ from bs4 import BeautifulSoup
 from loguru import logger
 
 from src.config import AXIS_BASE_URL, AXIS_PRODUCTS_URL
-from src.models.camera import CameraRecord, CategoryLink
+from src.models.camera import CategoryLink
 from src.scraper_base import CameraScraperBase
 
 
@@ -59,19 +59,19 @@ class AxisCameraScraper(CameraScraperBase):
         logger.info(f"Found {len(categories)} camera categories")
         return categories
 
-    async def fetch_cameras(self, category: CategoryLink) -> list[CameraRecord]:
+    async def fetch_cameras(self, category: CategoryLink) -> list[CategoryLink]:
         r"""
-        Fetch all products (series and individual) within a specific category.
-        Excludes collections/accessories sections.
+        Fetch all product series within a specific category.
+        Returns series links to be processed further.
 
         :param category: Category to scrape
-        :return: List of camera records (one per nav-card element)
+        :return: List of product series links
         """
         category_url = f"{AXIS_BASE_URL}{category.href}"
         html = await self.fetch_html(category_url)
         soup = BeautifulSoup(html, "html.parser")
 
-        cameras = []
+        series = []
 
         # Find the "Products within" section specifically (exclude "Collections within")
         for heading in soup.find_all("h3"):
@@ -86,35 +86,56 @@ class AxisCameraScraper(CameraScraperBase):
             # Fallback: if no "Products within" heading found, get all nav-cards
             nav_cards = soup.find_all("a", class_="nav-card")
 
-        for idx, card in enumerate(nav_cards):
-            product_url = card.get("href")
-            if not product_url:
+        for card in nav_cards:
+            href = card.get("href")
+            if not href:
                 continue
 
-            # Extract product info from card
+            # Extract product series info
             h4_tag = card.find("h4")
-            product_name = h4_tag.get_text(strip=True) if h4_tag else f"Product-{idx}"
+            name = h4_tag.get_text(strip=True) if h4_tag else None
 
-            # Extract description
-            tagline_tag = card.find("span", class_="nav-card__tagline")
-            description = tagline_tag.get_text(strip=True) if tagline_tag else None
+            if name:
+                series_link = CategoryLink(
+                    name=name,
+                    href=href,
+                    node_id=card.get("data-history-node-id"),
+                )
+                series.append(series_link)
 
-            # Extract image URL from picture/img
-            img_tag = card.find("img")
-            image_url = img_tag.get("src") if img_tag else None
+        logger.info(f"Found {len(series)} product series in {category.name}")
+        return series
 
-            # Create camera record for all nav-card elements (series and individual products)
-            camera = CameraRecord(
-                camera_id=f"axis-{category.name.lower().replace(' ', '-')}-{idx}",
-                model_name=product_name,
-                display_name=product_name,
-                description=description,
-                specifications={},
-                image_url=image_url,
-                source="Axis Communications",
-                category=category.name,
-            )
-            cameras.append(camera)
+    async def fetch_products_in_series(self, series: CategoryLink) -> list[str]:
+        r"""
+        Fetch individual product links within a product series page.
 
-        logger.info(f"Found {len(cameras)} products in {category.name}")
-        return cameras
+        :param series: Product series link to scrape
+        :return: List of product URLs
+        """
+        series_url = f"{AXIS_BASE_URL}{series.href}"
+        html = await self.fetch_html(series_url)
+        soup = BeautifulSoup(html, "html.parser")
+
+        products = []
+
+        # Find the "Products within" section specifically
+        for heading in soup.find_all("h3"):
+            if "Products within" in heading.get_text():
+                # Find the next nav-card__coll container
+                nav_coll = heading.find_next("div", class_="nav-card__coll")
+                if nav_coll:
+                    # Extract all nav-card elements from this container
+                    nav_cards = nav_coll.find_all("a", class_="nav-card")
+                    break
+        else:
+            # Fallback: if no "Products within" heading found, get all nav-cards
+            nav_cards = soup.find_all("a", class_="nav-card")
+
+        for card in nav_cards:
+            href = card.get("href")
+            if href:
+                products.append(href)
+
+        logger.info(f"Found {len(products)} products in {series.name}")
+        return products
