@@ -109,6 +109,7 @@ class AxisCameraScraper(CameraScraperBase):
     async def fetch_products_in_series(self, series: CategoryLink) -> list[str]:
         r"""
         Fetch individual product links within a product series page.
+        If the series page has no sub-products, returns the series itself as a product.
 
         :param series: Product series link to scrape
         :return: List of product URLs
@@ -137,5 +138,9 @@ class AxisCameraScraper(CameraScraperBase):
             if href:
                 products.append(href)
 
-        logger.info(f"Found {len(products)} products in {series.name}")
+        # If no sub-products found, the series page itself is a product
+        if not products:
+            products.append(series.href)
+
+        logger.info(f"Found {len(products)} product(s) in {series.name}")
         return products
