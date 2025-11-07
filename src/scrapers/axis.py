@@ -4,7 +4,7 @@ from bs4 import BeautifulSoup
 from loguru import logger
 
 from src.config import AXIS_BASE_URL, AXIS_PRODUCTS_URL
-from src.models.camera import CategoryLink
+from src.models.camera import CategoryLink, CameraRecord
 from src.scrapers.base import CameraScraperBase
 
 
@@ -144,3 +144,130 @@ class AxisCameraScraper(CameraScraperBase):
 
         logger.info(f"Found {len(products)} product(s) in {series.name}")
         return products
+
+    async def fetch_product_details(
+        self, product_url: str, model_name: str
+    ) -> CameraRecord:
+        r"""
+        Fetch detailed information about a specific product from its page.
+        Extracts carousel images, datasheet link, and technical specifications.
+
+        :param product_url: Relative URL to the product page
+        :param model_name: Product model name for the camera record
+        :return: CameraRecord with detailed product information
+        """
+        product_page_url = f"{AXIS_BASE_URL}{product_url}"
+        html = await self.fetch_html(product_page_url)
+        soup = BeautifulSoup(html, "html.parser")
+
+        # Extract carousel images
+        images = self._extract_carousel_images(soup)
+
+        # Extract datasheet URL
+        datasheet_url = self._extract_datasheet_url(soup)
+
+        # Extract technical specifications from HTML tables
+        specifications_html = self._extract_specifications_tables(soup)
+
+        # Create camera record with extracted data
+        camera_record = CameraRecord(
+            camera_id=model_name.lower().replace(" ", "-"),
+            model_name=model_name,
+            display_name=model_name,
+            description=None,
+            specifications={},
+            image_url=images[0] if images else None,
+            images=images,
+            datasheet_url=datasheet_url,
+            source="Axis Communications",
+            category="Network Camera",
+        )
+
+        logger.info(f"Extracted {len(images)} images for {model_name}")
+        if datasheet_url:
+            logger.info(f"Found datasheet: {datasheet_url}")
+        logger.info(f"Found {len(specifications_html)} specification sections")
+
+        return camera_record
+
+    @staticmethod
+    def _extract_carousel_images(soup: BeautifulSoup) -> list[str]:
+        r"""
+        Extract all image URLs from the product carousel.
+
+        :param soup: BeautifulSoup parsed HTML
+        :return: List of image URLs
+        """
+        images = []
+        carousel = soup.find("div", class_="product-img-carousel--main")
+
+        if not carousel:
+            return images
+
+        # Find all img tags within the carousel
+        img_tags = carousel.find_all("img")
+        for img in img_tags:
+            src = img.get("src")
+            if src:
+                images.append(src)
+
+        return images
+
+    @staticmethod
+    def _extract_datasheet_url(soup: BeautifulSoup) -> str | None:
+        r"""
+        Extract the datasheet PDF URL from the product page.
+
+        :param soup: BeautifulSoup parsed HTML
+        :return: Datasheet URL or None if not found
+        """
+        # Look for a link with text containing "Datasheet" and "pdf"
+        for link in soup.find_all("a"):
+            link_text = link.get_text(strip=True).lower()
+            if "datasheet" in link_text and "pdf" in link_text:
+                href = link.get("href")
+                if href:
+                    return href
+
+        return None
+
+    @staticmethod
+    def _extract_specifications_tables(
+        soup: BeautifulSoup,
+    ) -> dict[str, dict[str, str]]:
+        r"""
+        Extract technical specifications from HTML tables.
+
+        :param soup: BeautifulSoup parsed HTML
+        :return: Dictionary with section names as keys and spec tables as values
+        """
+        specifications = {}
+
+        # Find all tables with class "ac-table"
+        tables = soup.find_all("table", class_="ac-table")
+
+        for table in tables:
+            # Get the table caption (section name)
+            caption = table.find("caption", class_="ac-table__caption")
+            section_name = caption.get_text(strip=True) if caption else "Unknown"
+
+            # Extract rows from tbody
+            tbody = table.find("tbody", class_="ac-table__body")
+            if not tbody:
+                continue
+
+            section_specs = {}
+            rows = tbody.find_all("tr", class_="ac-table__row")
+
+            for row in rows:
+                cells = row.find_all("td", class_="ac-table__cell")
+                if len(cells) >= 2:
+                    # First cell is the spec name, second is the value
+                    spec_name = cells[0].get_text(strip=True)
+                    spec_value = cells[1].get_text(strip=True)
+                    section_specs[spec_name] = spec_value
+
+            if section_specs:
+                specifications[section_name] = section_specs
+
+        return specifications
