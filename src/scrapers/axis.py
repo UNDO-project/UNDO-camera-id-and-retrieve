@@ -146,19 +146,26 @@ class AxisCameraScraper(CameraScraperBase):
         return products
 
     async def fetch_product_details(
-        self, product_url: str, model_name: str
+        self, product_url: str, category_name: str, series_name: str
     ) -> CameraRecord:
         r"""
         Fetch detailed information about a specific product from its page.
-        Extracts carousel images, datasheet link, and technical specifications.
+        Extracts product name, carousel images, datasheet link, and technical specifications.
 
         :param product_url: Relative URL to the product page
-        :param model_name: Product model name for the camera record
+        :param category_name: Top-level category (e.g., "DOME CAMERAS")
+        :param series_name: Product series name (e.g., "AXIS M30 Dome Camera Series")
         :return: CameraRecord with detailed product information
         """
         product_page_url = f"{AXIS_BASE_URL}{product_url}"
         html = await self.fetch_html(product_page_url)
         soup = BeautifulSoup(html, "html.parser")
+
+        # Extract product name from the page itself
+        product_name = self._extract_product_name(soup)
+        if not product_name:
+            logger.warning(f"Could not extract product name from {product_url}")
+            product_name = "Unknown Product"
 
         # Extract carousel images
         images = self._extract_carousel_images(soup)
@@ -171,24 +178,47 @@ class AxisCameraScraper(CameraScraperBase):
 
         # Create camera record with extracted data
         camera_record = CameraRecord(
-            camera_id=model_name.lower().replace(" ", "-"),
-            model_name=model_name,
-            display_name=model_name,
+            camera_id=product_name.lower().replace(" ", "-"),
+            model_name=product_name,
+            display_name=product_name,
             description=None,
             specifications={},
             image_url=images[0] if images else None,
             images=images,
             datasheet_url=datasheet_url,
+            specifications_html=specifications_html,
             source="Axis Communications",
             category="Network Camera",
+            product_category=category_name,
+            product_series=series_name,
         )
 
-        logger.info(f"Extracted {len(images)} images for {model_name}")
+        logger.info(f"Extracted {len(images)} images for {product_name}")
         if datasheet_url:
             logger.info(f"Found datasheet: {datasheet_url}")
         logger.info(f"Found {len(specifications_html)} specification sections")
 
         return camera_record
+
+    @staticmethod
+    def _extract_product_name(soup: BeautifulSoup) -> str | None:
+        r"""
+        Extract the main product name/title from the product page.
+
+        :param soup: BeautifulSoup parsed HTML
+        :return: Product name or None if not found
+        """
+        # Look for h1 with title class
+        h1_tag = soup.find("h1", class_="title-attention")
+        if h1_tag:
+            return h1_tag.get_text(strip=True)
+
+        # Fallback to first h1
+        h1_tag = soup.find("h1")
+        if h1_tag:
+            return h1_tag.get_text(strip=True)
+
+        return None
 
     @staticmethod
     def _extract_carousel_images(soup: BeautifulSoup) -> list[str]:
@@ -271,3 +301,74 @@ class AxisCameraScraper(CameraScraperBase):
                 specifications[section_name] = section_specs
 
         return specifications
+
+    async def download_and_organize_images(self, record: CameraRecord) -> list[str]:
+        r"""
+        Download all carousel images and organize them by product ID.
+
+        :param record: CameraRecord containing image URLs
+        :return: List of local file paths
+        """
+        if not record.images:
+            return []
+
+        logger.info(f"Downloading {len(record.images)} images for {record.model_name}")
+        image_data_list = []
+
+        for idx, image_url in enumerate(record.images):
+            try:
+                # Handle relative URLs
+                if image_url.startswith("/"):
+                    full_url = f"{AXIS_BASE_URL}{image_url}"
+                else:
+                    full_url = image_url
+
+                image_data = await self.download_image(full_url)
+                image_data_list.append(image_data)
+                logger.debug(f"Downloaded image {idx + 1}/{len(record.images)}")
+
+            except Exception as e:
+                logger.error(f"Failed to download image {image_url}: {e}")
+                continue
+
+        # Store downloaded images using DatasetManager
+        from src.storage.dataset import DatasetManager
+
+        dataset_manager = DatasetManager()
+        local_paths = dataset_manager.organize_images(record, image_data_list)
+
+        logger.info(f"Saved {len(local_paths)} images for {record.model_name}")
+        return local_paths
+
+    async def download_and_save_pdf(self, record: CameraRecord) -> str | None:
+        r"""
+        Download datasheet PDF and save to organized location.
+
+        :param record: CameraRecord containing datasheet URL
+        :return: Local file path or None if failed
+        """
+        if not record.datasheet_url:
+            return None
+
+        logger.info(f"Downloading PDF for {record.model_name}")
+        try:
+            # Handle relative URLs
+            if record.datasheet_url.startswith("/"):
+                full_url = f"{AXIS_BASE_URL}{record.datasheet_url}"
+            else:
+                full_url = record.datasheet_url
+
+            pdf_data = await self.download_pdf(full_url)
+
+            # Store PDF using DatasetManager
+            from src.storage.dataset import DatasetManager
+
+            dataset_manager = DatasetManager()
+            local_path = dataset_manager.save_pdf(record, pdf_data)
+
+            logger.info(f"Saved PDF for {record.model_name}")
+            return local_path
+
+        except Exception as e:
+            logger.error(f"Failed to download PDF for {record.model_name}: {e}")
+            return None
