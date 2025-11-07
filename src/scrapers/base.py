@@ -61,6 +61,21 @@ class CameraScraperBase(ABC):
         response.raise_for_status()
         return response.content
 
+    async def download_pdf(self, pdf_url: str) -> bytes:
+        r"""
+        Download PDF bytes from URL.
+
+        :param pdf_url: URL to the PDF
+        :return: PDF bytes
+        :raises httpx.HTTPError: If download fails
+        """
+        delay = get_random_delay()
+        await asyncio.sleep(delay)
+
+        response = await self.client.get(pdf_url)
+        response.raise_for_status()
+        return response.content
+
     @abstractmethod
     async def fetch_categories(self) -> list[CategoryLink]:
         r"""
