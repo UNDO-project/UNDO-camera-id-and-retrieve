@@ -36,6 +36,8 @@ class CameraRecord(BaseModel):
     :ivar specifications_html: Technical specs parsed from HTML tables
     :ivar source: Which website/vendor this came from
     :ivar category: Camera category (e.g., "dome", "box", "bullet")
+    :ivar product_category: Top-level category (e.g., "DOME CAMERAS")
+    :ivar product_series: Product series name (e.g., "AXIS M30 Dome Camera Series")
     """
 
     camera_id: str = Field(..., description="Unique camera identifier")
@@ -57,6 +59,8 @@ class CameraRecord(BaseModel):
     )
     source: str = Field(..., description="Data source (e.g., 'Axis')")
     category: str = Field(..., description="Camera category")
+    product_category: str = Field(..., description="Top-level product category")
+    product_series: str = Field(..., description="Product series name")
 
     class Config:
         """Pydantic config."""
