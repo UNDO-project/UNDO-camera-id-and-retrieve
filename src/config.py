@@ -25,11 +25,13 @@ DEFAULT_HEADERS = {
 PROJECT_ROOT = Path(__file__).parent.parent
 DATA_DIR = PROJECT_ROOT / "data"
 IMAGES_DIR = DATA_DIR / "images"
+PDFS_DIR = DATA_DIR / "pdfs"
 OUTPUT_DIR = PROJECT_ROOT / "output"
 
 # Create directories if they don't exist
 DATA_DIR.mkdir(exist_ok=True)
 IMAGES_DIR.mkdir(exist_ok=True)
+PDFS_DIR.mkdir(exist_ok=True)
 OUTPUT_DIR.mkdir(exist_ok=True)
 
 # Axis Communications URLs
