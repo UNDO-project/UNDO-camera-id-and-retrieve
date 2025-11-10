@@ -1,22 +1,23 @@
-"""Main entry point for cctv-scrapers."""
+"""Scraping stage: Download CCTV data and organize on filesystem."""
 
 import asyncio
 
 from loguru import logger
 
 from src.scrapers.axis import AxisCameraScraper
-from src.storage.dataset import DatasetManager
 from src.storage.manifest import ManifestRecorder
 
 
-async def build_dataset() -> None:
+async def scrape_products() -> None:
     r"""
-    Build complete CCTV camera dataset with images, PDFs, and specifications.
-    Downloads all media files and creates parquet dataset.
-    Generates verification manifest for dataset validation.
+    Scrape CCTV products and save to filesystem.
+
+    This stage:
+    - Downloads images and PDFs
+    - Organizes files by category/series/product
+    - Creates verification manifest
     """
     scraper = AxisCameraScraper()
-    dataset_manager = DatasetManager()
     manifest_recorder = ManifestRecorder()
 
     try:
@@ -47,25 +48,13 @@ async def build_dataset() -> None:
 
                         # Download images
                         if product_details.images:
-                            image_paths = await scraper.download_and_organize_images(
-                                product_details
-                            )
-                            dataset_manager.update_record_with_files(
-                                product_details, image_files=image_paths
-                            )
+                            await scraper.download_and_organize_images(product_details)
 
                         # Download PDF
                         if product_details.datasheet_url:
-                            pdf_path = await scraper.download_and_save_pdf(
-                                product_details
-                            )
-                            if pdf_path:
-                                dataset_manager.update_record_with_files(
-                                    product_details, pdf_file=pdf_path
-                                )
+                            await scraper.download_and_save_pdf(product_details)
 
-                        # Add to dataset and record for manifest
-                        dataset_manager.add_record(product_details)
+                        # Record for manifest
                         manifest_recorder.record_product(product_details)
                         logger.success(f"      Saved {product_details.model_name}")
 
@@ -73,13 +62,10 @@ async def build_dataset() -> None:
                         logger.error(f"      Error processing product: {e}")
                         continue
 
-        # Save final dataset and manifest
-        logger.info("Saving dataset to parquet...")
-        dataset_manager.save_dataset()
+        # Save manifest
+        logger.info("Saving verification manifest...")
         manifest_recorder.save_manifest()
-        logger.success(
-            f"Dataset complete! {len(dataset_manager.records)} products saved"
-        )
+        logger.success("Scraping complete!")
 
     except Exception as e:
         logger.error(f"Error during dataset building: {e}")
@@ -90,10 +76,10 @@ async def build_dataset() -> None:
 
 def main() -> None:
     r"""
-    Run the CCTV scraper dataset building pipeline.
+    Run the CCTV scraping stage.
     """
-    logger.info("CCTV Dataset Builder started")
-    asyncio.run(build_dataset())
+    logger.info("CCTV Scraping Stage started")
+    asyncio.run(scrape_products())
 
 
 if __name__ == "__main__":

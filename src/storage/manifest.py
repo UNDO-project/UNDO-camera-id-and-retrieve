@@ -104,6 +104,9 @@ class ManifestRecorder:
             "has_specs": len(record.specifications_html) > 0
             if record.specifications_html
             else False,
+            "specifications_html": record.specifications_html
+            if record.specifications_html
+            else {},
         }
 
         self.manifest_data["categories"][category]["series"][series]["products"].append(

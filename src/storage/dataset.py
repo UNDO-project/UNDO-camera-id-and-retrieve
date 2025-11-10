@@ -46,8 +46,9 @@ class DatasetManager:
         """
         self.records.append(record)
 
+    @staticmethod
     def organize_images(
-        self, record: CameraRecord, image_data_list: list[bytes]
+        record: CameraRecord, image_data_list: list[bytes]
     ) -> list[str]:
         r"""
         Save downloaded images and return local file paths.
@@ -80,7 +81,8 @@ class DatasetManager:
 
         return local_paths
 
-    def save_pdf(self, record: CameraRecord, pdf_data: bytes) -> str:
+    @staticmethod
+    def save_pdf(record: CameraRecord, pdf_data: bytes) -> str:
         r"""
         Save downloaded PDF and return local file path.
 
@@ -105,7 +107,8 @@ class DatasetManager:
         logger.debug(f"Saved PDF for {record.camera_id}")
         return str(relative_path)
 
-    def _serialize_record(self, record: CameraRecord) -> dict[str, Any]:
+    @staticmethod
+    def _serialize_record(record: CameraRecord) -> dict[str, Any]:
         r"""
         Convert CameraRecord to a dictionary suitable for parquet serialization.
 
@@ -119,6 +122,8 @@ class DatasetManager:
             "description": record.description,
             "source": record.source,
             "category": record.category,
+            "product_category": record.product_category,
+            "product_series": record.product_series,
             "image_urls": json.dumps(record.images),
             "image_files": json.dumps([]),  # Will be populated if images downloaded
             "datasheet_url": record.datasheet_url,
@@ -151,8 +156,8 @@ class DatasetManager:
         df.to_parquet(self.dataset_path, index=False, engine="pyarrow")
         logger.info(f"Dataset saved to {self.dataset_path}")
 
+    @staticmethod
     def update_record_with_files(
-        self,
         record: CameraRecord,
         image_files: list[str] | None = None,
         pdf_file: str | None = None,
