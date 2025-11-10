@@ -6,15 +6,18 @@ from loguru import logger
 
 from src.scrapers.axis import AxisCameraScraper
 from src.storage.dataset import DatasetManager
+from src.storage.manifest import ManifestRecorder
 
 
 async def build_dataset() -> None:
     r"""
     Build complete CCTV camera dataset with images, PDFs, and specifications.
     Downloads all media files and creates parquet dataset.
+    Generates verification manifest for dataset validation.
     """
     scraper = AxisCameraScraper()
     dataset_manager = DatasetManager()
+    manifest_recorder = ManifestRecorder()
 
     try:
         categories = await scraper.fetch_categories()
@@ -61,17 +64,19 @@ async def build_dataset() -> None:
                                     product_details, pdf_file=pdf_path
                                 )
 
-                        # Add to dataset
+                        # Add to dataset and record for manifest
                         dataset_manager.add_record(product_details)
+                        manifest_recorder.record_product(product_details)
                         logger.success(f"      Saved {product_details.model_name}")
 
                     except Exception as e:
                         logger.error(f"      Error processing product: {e}")
                         continue
 
-        # Save final dataset
+        # Save final dataset and manifest
         logger.info("Saving dataset to parquet...")
         dataset_manager.save_dataset()
+        manifest_recorder.save_manifest()
         logger.success(
             f"Dataset complete! {len(dataset_manager.records)} products saved"
         )
