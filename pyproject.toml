@@ -13,5 +13,6 @@ dependencies = [
     "pre-commit>=4.3.0",
     "pyarrow>=22.0.0",
     "pydantic>=2.12.3",
+    "pytest>=9.0.0",
     "ruff>=0.14.3",
 ]

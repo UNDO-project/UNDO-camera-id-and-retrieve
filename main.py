@@ -5,6 +5,7 @@ import asyncio
 from loguru import logger
 
 from src.scrapers.axis import AxisCameraScraper
+from src.storage.download_cache import DownloadCache
 from src.storage.manifest import ManifestRecorder
 
 
@@ -16,8 +17,16 @@ async def scrape_products() -> None:
     - Downloads images and PDFs
     - Organizes files by category/series/product
     - Creates verification manifest
+    - Skips already-downloaded content to reduce server burden
     """
-    scraper = AxisCameraScraper()
+    # Initialize download cache
+    download_cache = DownloadCache()
+    cache_stats = download_cache.get_stats()
+    logger.info(
+        f"Loaded download cache: {cache_stats['total_downloads']} downloads cached"
+    )
+
+    scraper = AxisCameraScraper(download_cache=download_cache)
     manifest_recorder = ManifestRecorder()
 
     try:
@@ -67,11 +76,21 @@ async def scrape_products() -> None:
         manifest_recorder.save_manifest()
         logger.success("Scraping complete!")
 
+        # Report cache statistics
+        final_stats = download_cache.get_stats()
+        logger.info(
+            f"Final cache statistics: {final_stats['total_downloads']} total downloads, "
+            f"{final_stats['images']} images, {final_stats['pdfs']} PDFs, "
+            f"{final_stats['cached_products']} cached products, "
+            f"{final_stats['total_size_bytes'] / (1024 * 1024):.2f}MB total"
+        )
+
     except Exception as e:
         logger.error(f"Error during dataset building: {e}")
         raise
     finally:
         await scraper.close()
+        download_cache.close()
 
 
 def main() -> None:

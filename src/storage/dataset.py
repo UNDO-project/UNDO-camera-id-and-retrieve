@@ -9,6 +9,7 @@ from loguru import logger
 
 from src.config import IMAGES_DIR, OUTPUT_DIR, PDFS_DIR
 from src.models.camera import CameraRecord
+from src.storage.download_cache import DownloadCache
 
 
 class DatasetManager:
@@ -48,7 +49,9 @@ class DatasetManager:
 
     @staticmethod
     def organize_images(
-        record: CameraRecord, image_data_list: list[bytes]
+        record: CameraRecord,
+        image_data_list: list[tuple[str, bytes] | bytes],
+        download_cache: DownloadCache | None = None,
     ) -> list[str]:
         r"""
         Save downloaded images and return local file paths.
@@ -56,7 +59,8 @@ class DatasetManager:
         Creates directory structure: images/{category}/{series}/{product_id}/{index}.webp
 
         :param record: CameraRecord with camera_id, product_category, product_series
-        :param image_data_list: List of downloaded image bytes
+        :param image_data_list: List of downloaded image bytes or tuples of (url, bytes)
+        :param download_cache: Optional cache to mark downloads as completed
         :return: List of local file paths relative to project root
         """
         if not image_data_list:
@@ -70,10 +74,24 @@ class DatasetManager:
         product_dir.mkdir(parents=True, exist_ok=True)
 
         local_paths = []
-        for idx, image_data in enumerate(image_data_list):
+        for idx, item in enumerate(image_data_list):
+            # Handle both old format (bytes) and new format (url, bytes)
+            if isinstance(item, tuple):
+                image_url, image_data = item
+            else:
+                image_url = None
+                image_data = item
+
             file_path = product_dir / f"{idx}.webp"
             with open(file_path, "wb") as f:
                 f.write(image_data)
+
+            # Record in cache if provided
+            if download_cache and image_url:
+                download_cache.mark_downloaded(
+                    image_url, file_path, "image", file_content=image_data
+                )
+
             # Store relative path for portability
             relative_path = file_path.relative_to(Path.cwd())
             local_paths.append(str(relative_path))
@@ -82,7 +100,12 @@ class DatasetManager:
         return local_paths
 
     @staticmethod
-    def save_pdf(record: CameraRecord, pdf_data: bytes) -> str:
+    def save_pdf(
+        record: CameraRecord,
+        pdf_data: bytes,
+        download_cache: DownloadCache | None = None,
+        pdf_url: str | None = None,
+    ) -> str:
         r"""
         Save downloaded PDF and return local file path.
 
@@ -90,6 +113,8 @@ class DatasetManager:
 
         :param record: CameraRecord with camera_id, product_category, product_series
         :param pdf_data: Downloaded PDF bytes
+        :param download_cache: Optional cache to mark download as completed
+        :param pdf_url: URL of the PDF for cache tracking
         :return: Local file path relative to project root
         """
         # Normalize category and series names for directory structure
@@ -102,6 +127,12 @@ class DatasetManager:
         file_path = pdf_parent_dir / f"{record.camera_id}.pdf"
         with open(file_path, "wb") as f:
             f.write(pdf_data)
+
+        # Record in cache if provided
+        if download_cache and pdf_url:
+            download_cache.mark_downloaded(
+                pdf_url, file_path, "pdf", file_content=pdf_data
+            )
 
         relative_path = file_path.relative_to(Path.cwd())
         logger.debug(f"Saved PDF for {record.camera_id}")

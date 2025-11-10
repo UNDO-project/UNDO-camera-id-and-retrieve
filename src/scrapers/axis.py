@@ -6,6 +6,7 @@ from loguru import logger
 from src.config import AXIS_BASE_URL, AXIS_PRODUCTS_URL
 from src.models.camera import CategoryLink, CameraRecord
 from src.scrapers.base import CameraScraperBase
+from src.storage.download_cache import DownloadCache
 
 
 class AxisCameraScraper(CameraScraperBase):
@@ -15,11 +16,14 @@ class AxisCameraScraper(CameraScraperBase):
     Handles fetching camera categories and individual camera records.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, download_cache: DownloadCache | None = None) -> None:
         r"""
         Initialize Axis scraper.
+
+        :param download_cache: Optional DownloadCache for skipping downloaded content
         """
         super().__init__(AXIS_BASE_URL)
+        self.download_cache = download_cache
 
     async def fetch_categories(self) -> list[CategoryLink]:
         r"""
@@ -151,6 +155,7 @@ class AxisCameraScraper(CameraScraperBase):
         r"""
         Fetch detailed information about a specific product from its page.
         Extracts product name, carousel images, datasheet link, and technical specifications.
+        Uses cache to skip re-fetching product pages.
 
         :param product_url: Relative URL to the product page
         :param category_name: Top-level category (e.g., "DOME CAMERAS")
@@ -158,23 +163,51 @@ class AxisCameraScraper(CameraScraperBase):
         :return: CameraRecord with detailed product information
         """
         product_page_url = f"{AXIS_BASE_URL}{product_url}"
-        html = await self.fetch_html(product_page_url)
-        soup = BeautifulSoup(html, "html.parser")
 
-        # Extract product name from the page itself
-        product_name = self._extract_product_name(soup)
-        if not product_name:
-            logger.warning(f"Could not extract product name from {product_url}")
-            product_name = "Unknown Product"
+        # Check cache first
+        if self.download_cache and self.download_cache.has_cached_product(
+            product_page_url
+        ):
+            logger.info(f"Using cached product details for {product_url}")
+            cached_data = self.download_cache.get_cached_product(product_page_url)
+            product_name = cached_data["model_name"]
+            images = cached_data["image_urls"]
+            datasheet_url = cached_data["datasheet_url"]
+            specifications_html = cached_data["specifications_html"]
+        else:
+            # Fetch and parse product page
+            html = await self.fetch_html(product_page_url)
+            soup = BeautifulSoup(html, "html.parser")
 
-        # Extract carousel images
-        images = self._extract_carousel_images(soup)
+            # Extract product name from the page itself
+            product_name = self._extract_product_name(soup)
+            if not product_name:
+                logger.warning(f"Could not extract product name from {product_url}")
+                product_name = "Unknown Product"
 
-        # Extract datasheet URL
-        datasheet_url = self._extract_datasheet_url(soup)
+            # Extract carousel images
+            images = self._extract_carousel_images(soup)
 
-        # Extract technical specifications from HTML tables
-        specifications_html = self._extract_specifications_tables(soup)
+            # Extract datasheet URL
+            datasheet_url = self._extract_datasheet_url(soup)
+
+            # Extract technical specifications from HTML tables
+            specifications_html = self._extract_specifications_tables(soup)
+
+            # Cache the extracted product details
+            if self.download_cache:
+                self.download_cache.cache_product(
+                    product_page_url,
+                    product_name,
+                    images,
+                    datasheet_url,
+                    specifications_html,
+                )
+
+            logger.info(f"Extracted {len(images)} images for {product_name}")
+            if datasheet_url:
+                logger.info(f"Found datasheet: {datasheet_url}")
+            logger.info(f"Found {len(specifications_html)} specification sections")
 
         # Create camera record with extracted data
         camera_record = CameraRecord(
@@ -192,11 +225,6 @@ class AxisCameraScraper(CameraScraperBase):
             product_category=category_name,
             product_series=series_name,
         )
-
-        logger.info(f"Extracted {len(images)} images for {product_name}")
-        if datasheet_url:
-            logger.info(f"Found datasheet: {datasheet_url}")
-        logger.info(f"Found {len(specifications_html)} specification sections")
 
         return camera_record
 
@@ -306,14 +334,17 @@ class AxisCameraScraper(CameraScraperBase):
         r"""
         Download all carousel images and organize them by product ID.
 
+        Skips images already in cache to reduce server burden.
+
         :param record: CameraRecord containing image URLs
         :return: List of local file paths
         """
         if not record.images:
             return []
 
-        logger.info(f"Downloading {len(record.images)} images for {record.model_name}")
+        logger.info(f"Processing {len(record.images)} images for {record.model_name}")
         image_data_list = []
+        skipped_count = 0
 
         for idx, image_url in enumerate(record.images):
             try:
@@ -323,26 +354,54 @@ class AxisCameraScraper(CameraScraperBase):
                 else:
                     full_url = image_url
 
+                # Check cache before downloading
+                if self.download_cache and self.download_cache.has_downloaded(full_url):
+                    logger.debug(f"Skipping cached image: {full_url}")
+                    skipped_count += 1
+                    continue
+
                 image_data = await self.download_image(full_url)
-                image_data_list.append(image_data)
+
+                # Check for duplicate content
+                if self.download_cache:
+                    duplicate_path = self.download_cache.check_content_duplicate(
+                        image_data
+                    )
+                    if duplicate_path:
+                        logger.info(f"Image content already stored at {duplicate_path}")
+                        image_data_list.append((full_url, image_data))
+                        skipped_count += 1
+                        continue
+
+                image_data_list.append((full_url, image_data))
                 logger.debug(f"Downloaded image {idx + 1}/{len(record.images)}")
 
             except Exception as e:
                 logger.error(f"Failed to download image {image_url}: {e}")
                 continue
 
+        if skipped_count > 0:
+            logger.info(f"Skipped {skipped_count} cached image(s)")
+
         # Store downloaded images using DatasetManager
         from src.storage.dataset import DatasetManager
 
         dataset_manager = DatasetManager()
-        local_paths = dataset_manager.organize_images(record, image_data_list)
+        local_paths = dataset_manager.organize_images(
+            record, image_data_list, self.download_cache
+        )
 
-        logger.info(f"Saved {len(local_paths)} images for {record.model_name}")
+        logger.info(
+            f"Saved {len(local_paths)} images for {record.model_name} "
+            f"(skipped {skipped_count})"
+        )
         return local_paths
 
     async def download_and_save_pdf(self, record: CameraRecord) -> str | None:
         r"""
         Download datasheet PDF and save to organized location.
+
+        Skips PDFs already in cache to reduce server burden.
 
         :param record: CameraRecord containing datasheet URL
         :return: Local file path or None if failed
@@ -350,7 +409,7 @@ class AxisCameraScraper(CameraScraperBase):
         if not record.datasheet_url:
             return None
 
-        logger.info(f"Downloading PDF for {record.model_name}")
+        logger.info(f"Processing PDF for {record.model_name}")
         try:
             # Handle relative URLs
             if record.datasheet_url.startswith("/"):
@@ -358,13 +417,31 @@ class AxisCameraScraper(CameraScraperBase):
             else:
                 full_url = record.datasheet_url
 
+            # Check cache before downloading
+            if self.download_cache and self.download_cache.has_downloaded(full_url):
+                cached_path = self.download_cache.get_downloaded_path(full_url)
+                logger.info(f"Using cached PDF for {record.model_name}: {cached_path}")
+                return cached_path
+
             pdf_data = await self.download_pdf(full_url)
+
+            # Check for duplicate content
+            if self.download_cache:
+                duplicate_path = self.download_cache.check_content_duplicate(pdf_data)
+                if duplicate_path:
+                    logger.info(
+                        f"PDF content already stored at {duplicate_path}, "
+                        f"reusing for {record.model_name}"
+                    )
+                    return duplicate_path
 
             # Store PDF using DatasetManager
             from src.storage.dataset import DatasetManager
 
             dataset_manager = DatasetManager()
-            local_path = dataset_manager.save_pdf(record, pdf_data)
+            local_path = dataset_manager.save_pdf(
+                record, pdf_data, self.download_cache, full_url
+            )
 
             logger.info(f"Saved PDF for {record.model_name}")
             return local_path
