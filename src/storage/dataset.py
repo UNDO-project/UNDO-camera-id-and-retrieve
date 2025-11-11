@@ -156,9 +156,9 @@ class DatasetManager:
             "product_category": record.product_category,
             "product_series": record.product_series,
             "image_urls": json.dumps(record.images),
-            "image_files": json.dumps([]),  # Will be populated if images downloaded
+            "image_files": json.dumps(record.images),
             "datasheet_url": record.datasheet_url,
-            "datasheet_file": None,  # Will be populated if PDF downloaded
+            "datasheet_file": getattr(record, "datasheet_pdf", None),
             "specifications": json.dumps(record.specifications_html),
         }
 

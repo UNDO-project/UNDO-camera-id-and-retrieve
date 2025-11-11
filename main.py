@@ -57,11 +57,18 @@ async def scrape_products() -> None:
 
                         # Download images
                         if product_details.images:
-                            await scraper.download_and_organize_images(product_details)
+                            image_paths = await scraper.download_and_organize_images(
+                                product_details
+                            )
+                            product_details.images = image_paths
 
                         # Download PDF
                         if product_details.datasheet_url:
-                            await scraper.download_and_save_pdf(product_details)
+                            pdf_path = await scraper.download_and_save_pdf(
+                                product_details
+                            )
+                            if pdf_path:
+                                product_details.datasheet_pdf = pdf_path
 
                         # Record for manifest
                         manifest_recorder.record_product(product_details)
