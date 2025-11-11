@@ -60,13 +60,15 @@ async def scrape_products() -> None:
                             image_paths = await scraper.download_and_organize_images(
                                 product_details
                             )
-                            product_details.images = image_paths
+                            product_details.image_files = image_paths
 
                         # Download PDF
                         if product_details.datasheet_url:
                             pdf_path = await scraper.download_and_save_pdf(
                                 product_details
                             )
+                            if pdf_path:
+                                product_details.datasheet_file = pdf_path
                             if pdf_path:
                                 product_details.datasheet_pdf = pdf_path
 

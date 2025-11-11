@@ -52,8 +52,14 @@ class CameraRecord(BaseModel):
     images: list[str] = Field(
         default_factory=list, description="URLs to all carousel images"
     )
+    image_files: list[str] = Field(
+        default_factory=list, description="Local paths to downloaded image files"
+    )
     datasheet_url: Optional[str] = Field(None, description="URL to PDF datasheet")
     datasheet_pdf: Optional[bytes] = Field(None, description="Raw PDF bytes")
+    datasheet_file: Optional[str] = Field(
+        None, description="Local path to downloaded PDF file"
+    )
     specifications_html: dict[str, dict[str, Any]] = Field(
         default_factory=dict, description="Technical specs from HTML tables"
     )

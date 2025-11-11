@@ -99,8 +99,10 @@ class ManifestRecorder:
         product_entry = {
             "camera_id": record.camera_id,
             "model_name": record.model_name,
+            "image_urls": record.images if record.images else [],
             "image_count": len(record.images) if record.images else 0,
             "has_datasheet": record.datasheet_url is not None,
+            "datasheet_url": record.datasheet_url,
             "has_specs": len(record.specifications_html) > 0
             if record.specifications_html
             else False,

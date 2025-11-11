@@ -115,6 +115,8 @@ class DatasetBuilder:
                         )
 
                         # Create record
+                        image_urls = product_info.get("image_urls", [])
+                        datasheet_url = product_info.get("datasheet_url")
                         record = CameraRecord(
                             camera_id=camera_id,
                             model_name=model_name,
@@ -125,10 +127,10 @@ class DatasetBuilder:
                             category="Network Camera",
                             product_category=category_name,
                             product_series=series_name,
-                            images=[],  # Image URLs from manifest
+                            images=image_urls,
                             image_url=None,
                             image_files=image_files,
-                            datasheet_url=None,  # URL from manifest
+                            datasheet_url=datasheet_url,
                             datasheet_file=pdf_file,
                             specifications_html=specifications_html,
                         )
