@@ -1,7 +1,9 @@
 """Configuration for CCTV scrapers."""
 
 import random
+import os
 from pathlib import Path
+from dotenv import load_dotenv
 
 # Request timing (seconds)
 MIN_REQUEST_DELAY = 2.0
@@ -28,11 +30,17 @@ IMAGES_DIR = DATA_DIR / "images"
 PDFS_DIR = DATA_DIR / "pdfs"
 OUTPUT_DIR = PROJECT_ROOT / "output"
 
+# Model paths
+MODELS_DIR = PROJECT_ROOT / "models"
+YOLO_CAMERA_WEIGHTS_DEFAULT = MODELS_DIR / "yolov8_camera.pt"
+YOLO_CAMERA_WEIGHTS_ENV_VAR = "CAMERA_DETECTOR_WEIGHTS"
+
 # Create directories if they don't exist
 DATA_DIR.mkdir(exist_ok=True)
 IMAGES_DIR.mkdir(exist_ok=True)
 PDFS_DIR.mkdir(exist_ok=True)
 OUTPUT_DIR.mkdir(exist_ok=True)
+MODELS_DIR.mkdir(exist_ok=True)
 
 # Axis Communications URLs
 AXIS_BASE_URL = "https://www.axis.com"
@@ -46,3 +54,24 @@ def get_random_delay() -> float:
     :return: Random delay in seconds
     """
     return random.uniform(MIN_REQUEST_DELAY, MAX_REQUEST_DELAY)
+
+
+def get_yolo_camera_weights_path() -> Path:
+    r"""
+    Resolve the path to the YOLOv8 camera detector weights.
+
+    Resolution order:
+
+    1. Environment variable named by :data:`YOLO_CAMERA_WEIGHTS_ENV_VAR` if set
+       (typically ``CAMERA_DETECTOR_WEIGHTS`` loaded via ``python-dotenv``).
+    2. Default project-relative path under :data:`MODELS_DIR`.
+
+    :return: Path to the YOLOv8 weights file
+    """
+    # Load environment variables from .env if present
+    load_dotenv()
+    env_path = os.getenv(YOLO_CAMERA_WEIGHTS_ENV_VAR)
+    if env_path:
+        return Path(env_path)
+
+    return YOLO_CAMERA_WEIGHTS_DEFAULT
