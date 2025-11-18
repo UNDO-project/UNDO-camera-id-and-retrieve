@@ -8,6 +8,8 @@ will be added in a later step.
 from pathlib import Path
 from typing import List
 
+from src.models.identification import CameraDetection
+
 
 class Detector:
     r"""Camera detector wrapper.
@@ -25,7 +27,7 @@ class Detector:
         """
         self.model_path = Path(model_path)
 
-    def detect_from_path(self, image_path: Path | str) -> List[object]:
+    def detect_from_path(self, image_path: Path | str) -> List[CameraDetection]:
         r"""Run detection on a single image path.
 
         This is a placeholder implementation and will be replaced with the
