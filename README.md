@@ -1,7 +1,7 @@
 # cctv-scrapers
 
 A multi-stage pipeline for scraping CCTV camera product data from vendor sites,
-building a structured dataset, validating it, and (in progress) identifying
+building a structured dataset, validating it, and identifying
 cameras in real-world images using a YOLOv8-based detector and a catalog index.
 
 ## Stages
@@ -29,7 +29,7 @@ The project is organized into sequential stages:
      - data quality & statistics,
      - comparison against the manifest.
 
-4. **Stage 4 – Camera Identification & Retrieval (WIP)**
+4. **Stage 4 – Camera Identification & Retrieval**
    - New package: `src/identification/`.
    - Goal: given an input image, detect cameras (YOLOv8), crop them, and retrieve
      the most likely catalog matches from `products.parquet`.
@@ -38,13 +38,15 @@ The project is organized into sequential stages:
        `BoundingBox`, `CameraDetection`, `CameraMatch`, `RetrievalResult`.
      - `src/identification/detector.py`: `Detector` wrapper around a YOLOv8
        model (Ultralytics) that returns `CameraDetection` objects.
-     - `src/identification/embeddings.py`, `src/identification/index.py`,
-       `src/identification/service.py`, `src/identification/cli.py`:
-       skeleton modules that will be filled in as the identification system
-       is implemented.
-
-The README will be updated as Stage 4 evolves (embeddings, index building,
-retrieval service, and CLI).
+     - `src/identification/catalog.py`: helpers for loading `CameraRecord` and
+       iterating over reference image files.
+     - `src/identification/embeddings.py`: CLIP-based image embeddings with
+       CUDA/MPS/CPU support.
+     - `src/identification/index.py`: offline catalog embedding builder and
+       in-memory cosine-similarity index (`CatalogIndex`).
+     - `src/identification/service.py`: `IdentificationService` orchestration
+       of detection, cropping, embedding, and retrieval.
+     - `src/identification/cli.py`: CLI wrapper around `IdentificationService`.
 
 ## Setup
 
@@ -120,25 +122,29 @@ python validate_dataset.py
 This runs the validator CLI, which loads the parquet dataset and manifest,
 performs checks, and prints a validation report.
 
-### Stage 4 – Camera Identification & Retrieval (WIP)
+### Stage 4 – Camera Identification & Retrieval
 
-The identification system is under active development.
+The identification system builds on the scraped dataset and catalog
+embeddings to identify cameras in arbitrary input images.
 
-Currently available:
+Key entry points:
 
-- `Detector` in `src/identification/detector.py`:
-  - Loads YOLOv8 weights using `src.config.get_yolo_camera_weights_path()`.
-  - Exposes `detect_from_path(image_path)` which returns a list of
-    `CameraDetection` objects (bounding box, confidence, label, class ID).
+- `build_catalog_embeddings` in `src/identification/index.py`:
+  - Builds `output/catalog_embeddings.npz` from `output/products.parquet`.
+- `IdentificationService` in `src/identification/service.py`:
+  - Combines YOLOv8 detection, cropping, CLIP embeddings, and catalog search.
+- CLI in `src/identification/cli.py`:
+  - Run via `python -m src.identification.cli --image path/to/photo.jpg`.
 
-Planned components (not yet implemented):
+Example CLI usage:
 
-- Image embedding model and catalog index over `image_files` from
-  `output/products.parquet`.
-- High-level `IdentificationService` that combines detection, embeddings, and
-  nearest-neighbor search to produce `RetrievalResult` objects.
-- CLI entry point (e.g. `identify.py`) for running identification on one or more
-  input images.
+```bash
+# Build catalog embeddings once (after scraping and dataset build)
+python -m src.identification.index  # or call build_catalog_embeddings from a small script
 
-As these pieces are implemented, this README will be extended with concrete
-usage examples and commands.
+# Run identification on a single image
+python -m src.identification.cli \
+  --image path/to/photo.jpg \
+  --top-k 5 \
+  --min-similarity 0.3
+```
