@@ -73,7 +73,7 @@ management.
 ## Environment configuration (.env)
 
 Environment variables are loaded via `python-dotenv`. A sample configuration is
-provided in `.env.example`.
+provided in `.env-sample`.
 
 1. Copy the sample file:
 
@@ -85,11 +85,11 @@ provided in `.env.example`.
 
    ```bash
    # Path to YOLOv8 camera detector weights (.pt file)
-   CAMERA_DETECTOR_WEIGHTS=/absolute/or/project/relative/path/to/models/yolov8_camera.pt
+   CAMERA_DETECTOR_WEIGHTS=/absolute/or/project/relative/path/to/model_weights/yolov8_camera.pt
    ```
 
 If `CAMERA_DETECTOR_WEIGHTS` is not set, the code will fall back to the default
-project-relative path `models/yolov8_camera.pt`. The `models/` directory is
+project-relative path `model_weights/yolov8_camera.pt`. The `model_weights/` directory is
 created automatically at runtime.
 
 ## Running the pipeline
