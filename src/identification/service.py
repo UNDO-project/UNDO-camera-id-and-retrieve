@@ -7,6 +7,8 @@ produce camera identification results for input images.
 from pathlib import Path
 from typing import List
 
+from src.models.identification import RetrievalResult
+
 
 class IdentificationService:
     r"""Camera identification service.
@@ -33,7 +35,7 @@ class IdentificationService:
         self.parquet_path = Path(parquet_path)
         self.embeddings_path = Path(embeddings_path)
 
-    def identify_from_image(self, image_path: Path | str) -> List[object]:
+    def identify_from_image(self, image_path: Path | str) -> List[RetrievalResult]:
         r"""Identify cameras in the given image.
 
         Placeholder implementation that will later run detection and

@@ -7,6 +7,8 @@ catalog images, using precomputed embeddings for nearest-neighbor search.
 from pathlib import Path
 from typing import Any, List
 
+from src.models.identification import CameraMatch
+
 
 class CatalogIndex:
     r"""In-memory index over catalog image embeddings.
@@ -24,7 +26,7 @@ class CatalogIndex:
         """
         self.embeddings_path = Path(embeddings_path)
 
-    def search(self, query_vector: Any, top_k: int = 5) -> List[object]:
+    def search(self, query_vector: Any, top_k: int = 5) -> List[CameraMatch]:
         r"""Search the index for nearest catalog items.
 
         Placeholder implementation to be replaced with real similarity
