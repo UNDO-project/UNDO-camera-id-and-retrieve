@@ -4,6 +4,43 @@ A multi-stage pipeline for scraping CCTV camera product data from vendor sites,
 building a structured dataset, validating it, and identifying
 cameras in real-world images using a YOLOv8-based detector and a catalog index.
 
+## Quickstart
+
+This section shows the minimal set of commands to go from a fresh checkout
+to running camera identification on a single image.
+
+```bash
+# 1. Create and activate a virtual environment
+uv venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+
+# 2. Install core dependencies
+uv sync
+
+# 3. Install identification dependencies (YOLOv8 + CLIP)
+uv add ultralytics open-clip-torch torch
+
+# 4. Configure YOLOv8 weights
+cp .env-sample .env
+# then edit .env and set CAMERA_DETECTOR_WEIGHTS to your .pt file, or
+# place it at model_weights/yolov8_camera.pt to use the default.
+
+# 5. Scrape Axis cameras (Stage 1)
+python scrape.py
+
+# 6. Build dataset (Stage 2)
+python build_dataset.py
+
+# 7. Build catalog embeddings (Stage 4 prep)
+uv run python -c "from src.identification.index import build_catalog_embeddings; build_catalog_embeddings()"
+
+# 8. Run identification on an image (Stage 4)
+uv run python -m src.identification.cli \
+  --image path/to/photo.jpg \
+  --top-k 5 \
+  --min-similarity 0.3
+```
+
 ## Stages
 
 The project is organized into sequential stages:
