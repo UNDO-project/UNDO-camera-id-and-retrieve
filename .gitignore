@@ -146,7 +146,9 @@ tester.py
 logs/
 test_html/
 WARP.md
-model_weights
+model_weights/
+output/
+data/
 
 # MacOS stuff
 .DS_Store
