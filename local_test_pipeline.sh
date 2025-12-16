@@ -20,8 +20,8 @@ pytest tests/test_download_cache.py
 echo "Done..."
 echo "==============================================="
 
-echo "Running extraction tests"
-pytest tests/test_extraction.py
+echo "Running Axis extraction tests"
+pytest tests/test_axis_extraction.py
 echo "Done..."
 echo "==============================================="
 
