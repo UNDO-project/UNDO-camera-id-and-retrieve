@@ -46,6 +46,20 @@ MODELS_DIR.mkdir(exist_ok=True)
 AXIS_BASE_URL = "https://www.axis.com"
 AXIS_PRODUCTS_URL = f"{AXIS_BASE_URL}/products/network-cameras"
 
+# HikVision URLs
+HIKVISION_BASE_URL = "https://www.hikvision.com"
+HIKVISION_REGION = "europe"
+HIKVISION_PRODUCTS_BASE = (
+    f"{HIKVISION_BASE_URL}/{HIKVISION_REGION}/products/IP-Products"
+)
+
+# HikVision category paths (relative to base URL)
+HIKVISION_CATEGORIES = {
+    "Network Cameras": f"/{HIKVISION_REGION}/products/IP-Products/Network-Cameras/",
+    "PTZ Cameras": f"/{HIKVISION_REGION}/products/IP-Products/PTZ-Cameras/",
+    "Explosion-Proof Series": f"/{HIKVISION_REGION}/products/IP-Products/Explosion-Proof---Anti-corrosion-Series/",
+}
+
 
 def get_random_delay() -> float:
     r"""
