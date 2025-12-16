@@ -29,3 +29,8 @@ echo "Running identification service tests"
 pytest tests/test_identification_service.py
 echo "Done..."
 echo "==============================================="
+
+echo "Running Hikvision extraction tests"
+pytest tests/test_hikvision_extraction.py
+echo "Done..."
+echo "==============================================="
