@@ -11,6 +11,7 @@ dependencies = [
     "open-clip-torch>=3.2.0",
     "pandas>=2.3.3",
     "pillow>=12.0.0",
+    "playwright>=1.57.0",
     "pre-commit>=4.3.0",
     "pyarrow>=22.0.0",
     "pydantic>=2.12.3",
