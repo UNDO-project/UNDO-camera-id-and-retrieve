@@ -75,7 +75,7 @@ HIKVISION_SELECTORS = {
     "product_count": ".sum-number-of-products",
     "product_grid": ".layout4-wrapper",
     "product_link": ".btn-details-link",
-    "view_more_btn": ".product-view-more-btn",
+    "next_page_btn": "li span.next",
     "pagination": ".pagination-section",
 }
 

@@ -114,16 +114,19 @@ class HikvisionCameraScraper(CameraScraperBase):
                 logger.info(f"Extracted {len(product_urls)}/{total_count} product URLs")
 
                 # Check if we have all products
-                if len(product_urls) >= total_count:
+                if total_count > 0 and len(product_urls) >= total_count:
                     break
 
-                # Click "View More" to load more products
-                view_more = page.locator(HIKVISION_SELECTORS["view_more_btn"])
-                if await view_more.is_visible():
-                    await view_more.click()
-                    await page.wait_for_timeout(2000)  # Wait for new products
+                # Click "Next" button to go to next page
+                next_btn = page.locator(HIKVISION_SELECTORS["next_page_btn"])
+                if await next_btn.is_visible():
+                    await next_btn.click()
+                    # Wait for navigation and network to settle
+                    await page.wait_for_load_state("networkidle")
+                    await page.wait_for_selector(HIKVISION_SELECTORS["product_grid"])
                 else:
-                    break  # No more products to load
+                    logger.info("No more pages available")
+                    break  # No more pages to load
 
         finally:
             await page.close()
