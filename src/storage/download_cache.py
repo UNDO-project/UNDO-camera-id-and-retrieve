@@ -314,6 +314,18 @@ class DownloadCache:
         self.connection.commit()
         logger.warning("Cleared download cache")
 
+    def clear_all_cache(self) -> None:
+        r"""
+        Clear all cache entries (downloaded_content + product_cache).
+
+        Use with caution - this will allow all files and product pages to be re-processed.
+        """
+        cursor = self.connection.cursor()
+        cursor.execute("DELETE FROM downloaded_content")
+        cursor.execute("DELETE FROM product_cache")
+        self.connection.commit()
+        logger.warning("Cleared ALL cache (downloaded_content + product_cache)")
+
     def close(self) -> None:
         r"""
         Close database connection.
