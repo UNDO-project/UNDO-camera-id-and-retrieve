@@ -71,7 +71,7 @@ HIKVISION_CATEGORIES = {
 HIKVISION_SELECTORS = {
     "search_list": ".search-list",
     "subcategory_dropdown": "[data-title-type='subcategory']",
-    "subcategory_checkbox": "input[type='checkbox'][value='{subcategory}']",
+    "subcategory_radio": "input[type='radio'][value='{subcategory}']",
     "product_count": ".sum-number-of-products",
     "product_grid": ".layout4-wrapper",
     "product_link": ".btn-details-link",
@@ -83,7 +83,7 @@ HIKVISION_SELECTORS = {
 HIKVISION_SUBCATEGORIES = {
     "Network Cameras": "Network Cameras",
     "PTZ Cameras": "PTZ Cameras",
-    "Explosion-Proof Series": "Explosion-Proof & Anti-corrosion Series",
+    "Explosion-Proof Series": "Explosion-Proof and Anti-Corrosion Series",
 }
 
 # Playwright settings
