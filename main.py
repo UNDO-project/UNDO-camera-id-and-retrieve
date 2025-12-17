@@ -1,15 +1,17 @@
 """Scraping stage: Download CCTV data and organize on filesystem."""
 
+import argparse
 import asyncio
 
 from loguru import logger
 
 from src.scrapers.axis import AxisCameraScraper
+from src.scrapers.hikvision import HikvisionCameraScraper
 from src.storage.download_cache import DownloadCache
 from src.storage.manifest import ManifestRecorder
 
 
-async def scrape_products() -> None:
+async def scrape_products(vendor: str = "axis") -> None:
     r"""
     Scrape CCTV products and save to filesystem.
 
@@ -18,6 +20,8 @@ async def scrape_products() -> None:
     - Organizes files by category/series/product
     - Creates verification manifest
     - Skips already-downloaded content to reduce server burden
+
+    :param vendor: Vendor to scrape ('axis' or 'hikvision')
     """
     # Initialize download cache
     download_cache = DownloadCache()
@@ -26,7 +30,18 @@ async def scrape_products() -> None:
         f"Loaded download cache: {cache_stats['total_downloads']} downloads cached"
     )
 
-    scraper = AxisCameraScraper(download_cache=download_cache)
+    # Select scraper based on vendor
+    if vendor.lower() == "axis":
+        scraper = AxisCameraScraper(download_cache=download_cache)
+        logger.info("Using Axis Communications scraper")
+    elif vendor.lower() == "hikvision":
+        scraper = HikvisionCameraScraper(download_cache=download_cache)
+        logger.info("Using HikVision scraper")
+    else:
+        raise ValueError(
+            f"Unknown vendor: {vendor}. Supported vendors: axis, hikvision"
+        )
+
     manifest_recorder = ManifestRecorder()
 
     try:
@@ -69,8 +84,6 @@ async def scrape_products() -> None:
                             )
                             if pdf_path:
                                 product_details.datasheet_file = pdf_path
-                            if pdf_path:
-                                product_details.datasheet_pdf = pdf_path
 
                         # Record for manifest
                         manifest_recorder.record_product(product_details)
@@ -105,9 +118,23 @@ async def scrape_products() -> None:
 def main() -> None:
     r"""
     Run the CCTV scraping stage.
+
+    Supports command-line argument to specify vendor.
     """
-    logger.info("CCTV Scraping Stage started")
-    asyncio.run(scrape_products())
+    parser = argparse.ArgumentParser(
+        description="Scrape CCTV camera products from vendor websites"
+    )
+    parser.add_argument(
+        "--vendor",
+        type=str,
+        default="axis",
+        choices=["axis", "hikvision"],
+        help="Vendor to scrape (default: axis)",
+    )
+    args = parser.parse_args()
+
+    logger.info(f"CCTV Scraping Stage started - Vendor: {args.vendor}")
+    asyncio.run(scrape_products(vendor=args.vendor))
 
 
 if __name__ == "__main__":
