@@ -32,6 +32,9 @@ python scrape.py
 # Or scrape HikVision cameras
 python scrape.py --vendor hikvision
 
+# Or scrape all vendors
+python scrape.py --vendor all
+
 # 6. Build dataset (Stage 2)
 python build_dataset.py
 
@@ -151,12 +154,18 @@ Or scrape HikVision cameras:
 python scrape.py --vendor hikvision
 ```
 
+Or scrape all vendors:
+```bash
+python scrape.py --vendor all
+```
+
 This will populate `data/images`, `data/pdfs`, and generate
 `output/verification_manifest.json`.
 
 **Supported vendors:**
 - `axis`: Axis Communications (Network cameras)
 - `hikvision`: HikVision (Network cameras, PTZ cameras, Explosion-Proof series)
+- `all`: Scrape all supported vendors sequentially
 
 ### Stage 2 – Build parquet dataset
 
