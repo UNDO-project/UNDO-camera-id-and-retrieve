@@ -397,55 +397,5 @@ class AxisCameraScraper(CameraScraperBase):
         )
         return local_paths
 
-    async def download_and_save_pdf(self, record: CameraRecord) -> str | None:
-        r"""
-        Download datasheet PDF and save to organized location.
-
-        Skips PDFs already in cache to reduce server burden.
-
-        :param record: CameraRecord containing datasheet URL
-        :return: Local file path or None if failed
-        """
-        if not record.datasheet_url:
-            return None
-
-        logger.info(f"Processing PDF for {record.model_name}")
-        try:
-            # Handle relative URLs
-            if record.datasheet_url.startswith("/"):
-                full_url = f"{AXIS_BASE_URL}{record.datasheet_url}"
-            else:
-                full_url = record.datasheet_url
-
-            # Check cache before downloading
-            if self.download_cache and self.download_cache.has_downloaded(full_url):
-                cached_path = self.download_cache.get_downloaded_path(full_url)
-                logger.info(f"Using cached PDF for {record.model_name}: {cached_path}")
-                return cached_path
-
-            pdf_data = await self.download_pdf(full_url)
-
-            # Check for duplicate content
-            if self.download_cache:
-                duplicate_path = self.download_cache.check_content_duplicate(pdf_data)
-                if duplicate_path:
-                    logger.info(
-                        f"PDF content already stored at {duplicate_path}, "
-                        f"reusing for {record.model_name}"
-                    )
-                    return duplicate_path
-
-            # Store PDF using DatasetManager
-            from src.storage.dataset import DatasetManager
-
-            dataset_manager = DatasetManager()
-            local_path = dataset_manager.save_pdf(
-                record, pdf_data, self.download_cache, full_url
-            )
-
-            logger.info(f"Saved PDF for {record.model_name}")
-            return local_path
-
-        except Exception as e:
-            logger.error(f"Failed to download PDF for {record.model_name}: {e}")
-            return None
+    # download_and_save_pdf() inherited from CameraScraperBase
+    # _normalize_pdf_url() uses default implementation (handles relative URLs)

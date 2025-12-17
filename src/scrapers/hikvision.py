@@ -46,6 +46,20 @@ class HikvisionCameraScraper(CameraScraperBase):
             self._browser = await self._playwright.chromium.launch(headless=False)
         return self._browser
 
+    @staticmethod
+    def _normalize_url(url: str | None) -> str | None:
+        """
+        Normalize protocol-relative URLs to HTTPS.
+
+        :param url: URL that may start with '//'
+        :return: Normalized URL with https: prefix, or None if input is None
+        """
+        if not url:
+            return None
+        if url.startswith("//"):
+            return f"https:{url}"
+        return url
+
     async def close(self) -> None:
         """Close HTTP client and Playwright browser."""
         await self.client.aclose()
@@ -314,20 +328,19 @@ class HikvisionCameraScraper(CameraScraperBase):
             # Find all swiper slides with data-original attribute
             slides = carousel.find_all("div", class_="swiper-slide")
             for slide in slides:
-                img_url = slide.get("data-original")
+                img_url = HikvisionCameraScraper._normalize_url(
+                    slide.get("data-original")
+                )
                 if img_url:
-                    # Ensure full URL
-                    if img_url.startswith("//"):
-                        img_url = f"https:{img_url}"
                     images.append(img_url)
 
         # Fallback: look for img tags with src/data-src
         if not images and carousel:
             for img in carousel.find_all("img"):
-                src = img.get("src") or img.get("data-src")
+                src = HikvisionCameraScraper._normalize_url(
+                    img.get("src") or img.get("data-src")
+                )
                 if src:
-                    if src.startswith("//"):
-                        src = f"https:{src}"
                     images.append(src)
 
         return images
@@ -343,11 +356,8 @@ class HikvisionCameraScraper(CameraScraperBase):
         # Look for the product_data_sheet link
         datasheet_link = soup.find("a", class_="product_data_sheet")
         if datasheet_link:
-            href = datasheet_link.get("href")
+            href = HikvisionCameraScraper._normalize_url(datasheet_link.get("href"))
             if href:
-                # Ensure full URL
-                if href.startswith("//"):
-                    href = f"https:{href}"
                 return href
 
         # Fallback: look for any PDF link with "datasheet" in text
@@ -355,9 +365,7 @@ class HikvisionCameraScraper(CameraScraperBase):
             href = link.get("href", "")
             text = link.get_text(strip=True).lower()
             if ".pdf" in href.lower() and "datasheet" in text:
-                if href.startswith("//"):
-                    href = f"https:{href}"
-                return href
+                return HikvisionCameraScraper._normalize_url(href)
 
         return None
 
@@ -486,10 +494,10 @@ class HikvisionCameraScraper(CameraScraperBase):
 
         for idx, image_url in enumerate(record.images):
             try:
-                # HikVision images are full URLs from assets.hikvision.com
-                full_url = image_url
-                if full_url.startswith("//"):
-                    full_url = f"https:{full_url}"
+                # Normalize URL (handle protocol-relative URLs)
+                full_url = self._normalize_url(image_url)
+                if not full_url:
+                    continue
 
                 # Check cache before downloading
                 if self.download_cache and self.download_cache.has_downloaded(full_url):
@@ -544,54 +552,15 @@ class HikvisionCameraScraper(CameraScraperBase):
         )
         return local_paths
 
-    async def download_and_save_pdf(self, record: CameraRecord) -> str | None:
-        r"""
-        Download datasheet PDF and save to organized location.
+    # download_and_save_pdf() inherited from CameraScraperBase
 
-        Skips PDFs already in cache to reduce server burden.
-
-        :param record: CameraRecord containing datasheet URL
-        :return: Local file path or None if failed
+    def _normalize_pdf_url(self, url: str) -> str | None:
         """
-        if not record.datasheet_url:
-            return None
+        Override base implementation to handle Hikvision's protocol-relative URLs.
 
-        logger.info(f"Processing PDF for {record.model_name}")
-        try:
-            # Handle protocol-relative URLs
-            full_url = record.datasheet_url
-            if full_url.startswith("//"):
-                full_url = f"https:{full_url}"
+        Hikvision uses protocol-relative URLs (starting with '//').
 
-            # Check cache before downloading
-            if self.download_cache and self.download_cache.has_downloaded(full_url):
-                cached_path = self.download_cache.get_downloaded_path(full_url)
-                logger.info(f"Using cached PDF for {record.model_name}: {cached_path}")
-                return cached_path
-
-            pdf_data = await self.download_pdf(full_url)
-
-            # Check for duplicate content
-            if self.download_cache:
-                duplicate_path = self.download_cache.check_content_duplicate(pdf_data)
-                if duplicate_path:
-                    logger.info(
-                        f"PDF content already stored at {duplicate_path}, "
-                        f"reusing for {record.model_name}"
-                    )
-                    return duplicate_path
-
-            # Store PDF using DatasetManager
-            from src.storage.dataset import DatasetManager
-
-            dataset_manager = DatasetManager()
-            local_path = dataset_manager.save_pdf(
-                record, pdf_data, self.download_cache, full_url
-            )
-
-            logger.info(f"Saved PDF for {record.model_name}")
-            return local_path
-
-        except Exception as e:
-            logger.error(f"Failed to download PDF for {record.model_name}: {e}")
-            return None
+        :param url: URL that may be protocol-relative or regular
+        :return: Normalized absolute URL, or None if URL is invalid
+        """
+        return self._normalize_url(url)
