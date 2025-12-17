@@ -21,8 +21,18 @@ async def scrape_products(vendor: str = "axis") -> None:
     - Creates verification manifest
     - Skips already-downloaded content to reduce server burden
 
-    :param vendor: Vendor to scrape ('axis' or 'hikvision')
+    :param vendor: Vendor to scrape ('axis', 'hikvision', or 'all')
     """
+    # Handle 'all' option
+    if vendor.lower() == "all":
+        logger.info("Scraping all vendors: axis, hikvision")
+        for vendor_name in ["axis", "hikvision"]:
+            logger.info(f"\n{'=' * 60}")
+            logger.info(f"Starting scrape for vendor: {vendor_name.upper()}")
+            logger.info(f"{'=' * 60}\n")
+            await scrape_products(vendor=vendor_name)
+        return
+
     # Initialize download cache
     download_cache = DownloadCache()
     cache_stats = download_cache.get_stats()
@@ -39,7 +49,7 @@ async def scrape_products(vendor: str = "axis") -> None:
         logger.info("Using HikVision scraper")
     else:
         raise ValueError(
-            f"Unknown vendor: {vendor}. Supported vendors: axis, hikvision"
+            f"Unknown vendor: {vendor}. Supported vendors: axis, hikvision, all"
         )
 
     manifest_recorder = ManifestRecorder()
@@ -128,8 +138,8 @@ def main() -> None:
         "--vendor",
         type=str,
         default="axis",
-        choices=["axis", "hikvision"],
-        help="Vendor to scrape (default: axis)",
+        choices=["axis", "hikvision", "all"],
+        help="Vendor to scrape (default: axis). Use 'all' to scrape all vendors",
     )
     parser.add_argument(
         "--clear-cache",
