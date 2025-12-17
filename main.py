@@ -131,7 +131,40 @@ def main() -> None:
         choices=["axis", "hikvision"],
         help="Vendor to scrape (default: axis)",
     )
+    parser.add_argument(
+        "--clear-cache",
+        action="store_true",
+        help="Clear the download cache (downloaded_content table) and exit.",
+    )
+    parser.add_argument(
+        "--clear-cache-all",
+        action="store_true",
+        help="Clear ALL cache tables (downloaded_content + product_cache) and exit.",
+    )
+    parser.add_argument(
+        "--yes",
+        action="store_true",
+        help="Skip confirmation prompts (use with --clear-cache / --clear-cache-all).",
+    )
     args = parser.parse_args()
+
+    if args.clear_cache or args.clear_cache_all:
+        if not args.yes:
+            which = "ALL cache tables" if args.clear_cache_all else "download cache"
+            reply = input(f"This will clear {which}. Continue? [y/N]: ").strip().lower()
+            if reply not in ("y", "yes"):
+                logger.info("Aborted cache clear.")
+                return
+
+        cache = DownloadCache()
+        try:
+            if args.clear_cache_all:
+                cache.clear_all_cache()
+            else:
+                cache.clear_cache()
+        finally:
+            cache.close()
+        return
 
     logger.info(f"CCTV Scraping Stage started - Vendor: {args.vendor}")
     asyncio.run(scrape_products(vendor=args.vendor))
