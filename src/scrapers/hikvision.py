@@ -12,7 +12,7 @@ from src.config import (
     HIKVISION_BASE_URL,
     HIKVISION_SELECTORS,
     HIKVISION_IP_PRODUCTS_URL,
-    HIKVISION_SUBCATEGORIES,
+    HIKVISION_IP_SUBCATEGORIES,
     DEFAULT_HEADERS,
 )
 from src.models.camera import CategoryLink, CameraRecord
@@ -164,7 +164,7 @@ class HikvisionCameraScraper(CameraScraperBase):
         logger.info("Fetching HikVision product categories")
 
         categories = []
-        for name, filter_value in HIKVISION_SUBCATEGORIES.items():
+        for name, filter_value in HIKVISION_IP_SUBCATEGORIES.items():
             categories.append(
                 CategoryLink(
                     name=name,
