@@ -1,9 +1,20 @@
 """Scraper for HikVision network cameras."""
 
+from typing import List, Tuple, Dict
+import re
+
+import httpx
 from bs4 import BeautifulSoup
 from loguru import logger
+from playwright.async_api import async_playwright, Browser
 
-from src.config import HIKVISION_BASE_URL, HIKVISION_CATEGORIES
+from src.config import (
+    HIKVISION_BASE_URL,
+    HIKVISION_SELECTORS,
+    HIKVISION_IP_PRODUCTS_URL,
+    HIKVISION_SUBCATEGORIES,
+    DEFAULT_HEADERS,
+)
 from src.models.camera import CategoryLink, CameraRecord
 from src.scrapers.base import CameraScraperBase
 from src.storage.download_cache import DownloadCache
@@ -25,8 +36,101 @@ class HikvisionCameraScraper(CameraScraperBase):
         """
         super().__init__(HIKVISION_BASE_URL)
         self.download_cache = download_cache
+        self._browser: Browser | None = None
+        self._playwright = None
 
-    async def fetch_categories(self) -> list[CategoryLink]:
+    async def _get_browser(self) -> Browser:
+        """Lazily initialize Playwright browser."""
+        if self._browser is None:
+            self._playwright = await async_playwright().start()
+            self._browser = await self._playwright.chromium.launch(headless=False)
+        return self._browser
+
+    async def close(self) -> None:
+        """Close HTTP client and Playwright browser."""
+        await self.client.aclose()
+        if self._browser:
+            await self._browser.close()
+        if self._playwright:
+            await self._playwright.stop()
+
+    async def fetch_product_urls_with_playwright(self, subcategory: str) -> List[str]:
+        """
+        Use Playwright to navigate, filter, and extract product URLs.
+
+        :param subcategory: Subcategory filter value (e.g., "Network Cameras")
+        :return: List of product detail page URLs
+        """
+        browser = await self._get_browser()
+        page = await browser.new_page()
+        product_urls = []
+
+        try:
+            # 1. Navigate to IP Products page
+            await page.goto(HIKVISION_IP_PRODUCTS_URL, wait_until="networkidle")
+
+            # 2. Wait for search list to load
+            await page.wait_for_selector(HIKVISION_SELECTORS["search_list"])
+
+            # 3. Click subcategory dropdown to expand
+            subcategory_dropdown = page.locator(
+                HIKVISION_SELECTORS["subcategory_dropdown"]
+            )
+            await subcategory_dropdown.click()
+
+            # 4. Select the subcategory radio
+            radio_selector = HIKVISION_SELECTORS["subcategory_radio"].format(
+                subcategory=subcategory
+            )
+            await page.locator(radio_selector).check()
+
+            # 5. Wait for products to load
+            await page.wait_for_selector(HIKVISION_SELECTORS["product_grid"])
+            await page.wait_for_timeout(2000)  # Extra wait for dynamic content
+
+            # 6. Get initial product count
+            count_locator = page.locator(HIKVISION_SELECTORS["product_count"])
+            count_texts = await count_locator.all_text_contents()
+            counts = []
+            for t in count_texts:
+                digits = re.sub(r"[^\d]", "", (t or "").strip())
+                if digits:
+                    counts.append(int(digits))
+
+            total_count = max(counts) if counts else 0
+            logger.info(f"Found {total_count} products for {subcategory}")
+
+            # 7. Extract products with pagination
+            while True:
+                # Extract product links from current page
+                links = page.locator(HIKVISION_SELECTORS["product_link"])
+                count = await links.count()
+
+                for i in range(count):
+                    href = await links.nth(i).get_attribute("href")
+                    if href and href not in product_urls:
+                        product_urls.append(href)
+
+                logger.info(f"Extracted {len(product_urls)}/{total_count} product URLs")
+
+                # Check if we have all products
+                if len(product_urls) >= total_count:
+                    break
+
+                # Click "View More" to load more products
+                view_more = page.locator(HIKVISION_SELECTORS["view_more_btn"])
+                if await view_more.is_visible():
+                    await view_more.click()
+                    await page.wait_for_timeout(2000)  # Wait for new products
+                else:
+                    break  # No more products to load
+
+        finally:
+            await page.close()
+
+        return product_urls
+
+    async def fetch_categories(self) -> List[CategoryLink]:
         r"""
         Return predefined HikVision camera categories.
 
@@ -35,93 +139,62 @@ class HikvisionCameraScraper(CameraScraperBase):
         logger.info("Fetching HikVision product categories")
 
         categories = []
-        for name, href in HIKVISION_CATEGORIES.items():
+        for name, filter_value in HIKVISION_SUBCATEGORIES.items():
             categories.append(
                 CategoryLink(
                     name=name,
-                    href=href,
-                    node_id=None,  # HikVision doesn't use Drupal node IDs
+                    href=filter_value,  # Store filter value
+                    node_id=None,
                 )
             )
 
         logger.info(f"Found {len(categories)} HikVision categories")
         return categories
 
-    async def fetch_cameras(self, category: CategoryLink) -> list[CategoryLink]:
+    async def fetch_cameras(self, category: CategoryLink) -> List[CategoryLink]:
         r"""
-        Fetch all product series within a specific category.
-        Returns series links to be processed further.
+        Fetch all product URLs for a category using Playwright.
 
-        :param category: Category to scrape
-        :return: List of product series links
+        :param category: Category with subcategory filter value in href
+        :return: List of CategoryLink objects (each pointing to a product)
+
         """
-        category_url = f"{HIKVISION_BASE_URL}{category.href}"
-        html = await self.fetch_html(category_url)
-        soup = BeautifulSoup(html, "html.parser")
+        subcategory_filter = category.href
 
-        series = []
+        # Use Playwright to get all product URLs
+        product_urls = await self.fetch_product_urls_with_playwright(subcategory_filter)
 
-        # Find series links (subcategories) - they have class "title-link"
-        series_links = soup.find_all("a", class_="title-link")
-
-        for link in series_links:
-            href = link.get("href")
-            if not href:
-                continue
-
-            # Extract series name from h4 tag
-            h4_tag = link.find("h4")
-            name = h4_tag.get_text(strip=True) if h4_tag else None
-
-            if name and href:
-                series_link = CategoryLink(
-                    name=name,
-                    href=href,
+        # Wrap each URL as a CategoryLink for compatibility with main.py
+        product_links = []
+        for url in product_urls:
+            product_links.append(
+                CategoryLink(
+                    name=url,
+                    href=url,
                     node_id=None,
                 )
-                series.append(series_link)
+            )
 
-        logger.info(f"Found {len(series)} product series in {category.name}")
-        return series
+        logger.info(f"Found {len(product_links)} products in {category.name}")
+        return product_links
 
-    async def fetch_products_in_series(self, series: CategoryLink) -> list[str]:
+    @staticmethod
+    async def fetch_products_in_series(series: CategoryLink) -> List[str]:
         r"""
-        Fetch individual product links within a product series page.
+        Return the product URL directly (series IS the product).
 
         :param series: Product series link to scrape
         :return: List of product URLs
         """
-        series_url = f"{HIKVISION_BASE_URL}{series.href}"
-        html = await self.fetch_html(series_url)
-        soup = BeautifulSoup(html, "html.parser")
-
-        products = []
-
-        # Look for product links - need to identify the pattern
-        # Based on the individual product page URLs, they follow pattern like:
-        # /europe/products/IP-Products/Network-Cameras/Pro-Series-EasyIP-/ds-2cd2h46g2h-izs2uy-s-l--rb-/
-
-        # Try finding links that contain product model patterns
-        for link in soup.find_all("a", href=True):
-            href = link.get("href")
-            # Product pages are deeper in the hierarchy (more path segments)
-            # and typically end with a model name slug
-            if href and href.startswith(series.href) and href != series.href:
-                # Check if this is likely a product page (not another category)
-                # Product URLs typically have more path segments
-                if href.count("/") > series.href.count("/"):
-                    if href not in products:
-                        products.append(href)
-
-        logger.info(f"Found {len(products)} product(s) in {series.name}")
-        return products
+        return [series.href]
 
     async def fetch_product_details(
-        self, product_url: str, category_name: str
+        self, product_url: str, category_name: str, series_name: str | None = None
     ) -> CameraRecord:
         r"""
         Fetch detailed information about a specific product from its page.
 
+        :param series_name:
         :param product_url: Relative URL to the product page
         :param category_name: Top-level category (e.g., "Network Cameras")
         :return: CameraRecord with detailed product information
@@ -196,7 +269,7 @@ class HikvisionCameraScraper(CameraScraperBase):
         return camera_record
 
     @staticmethod
-    def _extract_product_name(soup: BeautifulSoup) -> tuple[str | None, str | None]:
+    def _extract_product_name(soup: BeautifulSoup) -> Tuple[str | None, str | None]:
         r"""
         Extract product name and number from meta tags or data attributes.
 
@@ -220,7 +293,7 @@ class HikvisionCameraScraper(CameraScraperBase):
         return product_name, product_number
 
     @staticmethod
-    def _extract_carousel_images(soup: BeautifulSoup) -> list[str]:
+    def _extract_carousel_images(soup: BeautifulSoup) -> List[str]:
         r"""
         Extract all image URLs from the product carousel.
 
@@ -288,7 +361,7 @@ class HikvisionCameraScraper(CameraScraperBase):
     @staticmethod
     def _extract_specifications(
         soup: BeautifulSoup,
-    ) -> dict[str, dict[str, str]]:
+    ) -> Dict[str, Dict[str, str]]:
         r"""
         Extract technical specifications from accordion-style container.
 
@@ -350,7 +423,49 @@ class HikvisionCameraScraper(CameraScraperBase):
 
         return specifications
 
-    async def download_and_organize_images(self, record: CameraRecord) -> list[str]:
+    async def _download_image_httpx(self, image_url: str) -> bytes:
+        """
+        Download image using httpx but with anti-hotlink headers Hikvision commonly expects.
+        """
+        headers = {
+            **DEFAULT_HEADERS,
+            "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+            "Referer": f"{HIKVISION_BASE_URL}/",
+            "Origin": HIKVISION_BASE_URL,
+        }
+
+        response = await self.client.get(
+            image_url, headers=headers, follow_redirects=True
+        )
+        response.raise_for_status()
+        return response.content
+
+    async def _download_image_playwright(self, image_url: str) -> bytes:
+        """
+        Download image via Chromium network stack (often bypasses CDN 403s that block httpx).
+        """
+        browser = await self._get_browser()
+        context = await browser.new_context(
+            extra_http_headers={
+                **DEFAULT_HEADERS,
+                "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+                "Referer": f"{HIKVISION_BASE_URL}/",
+                "Origin": HIKVISION_BASE_URL,
+            }
+        )
+        try:
+            resp = await context.request.get(image_url)
+            if resp.status >= 400:
+                raise httpx.HTTPStatusError(
+                    f"Playwright download failed: HTTP {resp.status}",
+                    request=None,
+                    response=None,
+                )
+            return await resp.body()
+        finally:
+            await context.close()
+
+    async def download_and_organize_images(self, record: CameraRecord) -> List[str]:
         r"""
         Download all carousel images and organize them by product ID.
 
@@ -379,7 +494,17 @@ class HikvisionCameraScraper(CameraScraperBase):
                     skipped_count += 1
                     continue
 
-                image_data = await self.download_image(full_url)
+                try:
+                    image_data = await self._download_image_httpx(full_url)
+                except httpx.HTTPStatusError as e:
+                    status = getattr(getattr(e, "response", None), "status_code", None)
+                    if status == 403:
+                        logger.warning(
+                            f"Got 403 from httpx for image; retrying via Playwright: {full_url}"
+                        )
+                        image_data = await self._download_image_playwright(full_url)
+                    else:
+                        raise
 
                 # Check for duplicate content
                 if self.download_cache:
