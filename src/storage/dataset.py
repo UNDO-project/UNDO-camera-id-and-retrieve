@@ -56,7 +56,7 @@ class DatasetManager:
         r"""
         Save downloaded images and return local file paths.
 
-        Creates directory structure: images/{category}/{series}/{product_id}/{index}.webp
+        Creates directory structure: images/{vendor}/{category}/{series}/{product_id}/{index}.webp
 
         :param record: CameraRecord with camera_id, product_category, product_series
         :param image_data_list: List of downloaded image bytes or tuples of (url, bytes)
@@ -66,11 +66,14 @@ class DatasetManager:
         if not image_data_list:
             return []
 
-        # Normalize category and series names for directory structure
+        # Normalize vendor, category and series names for directory structure
+        vendor_dir = record.source.upper().replace(" ", "_")
         category_dir = record.product_category.upper().replace(" ", "_")
         series_dir = record.product_series.replace(" ", "_")
 
-        product_dir = IMAGES_DIR / category_dir / series_dir / record.camera_id
+        product_dir = (
+            IMAGES_DIR / vendor_dir / category_dir / series_dir / record.camera_id
+        )
         product_dir.mkdir(parents=True, exist_ok=True)
 
         local_paths = []
@@ -109,7 +112,7 @@ class DatasetManager:
         r"""
         Save downloaded PDF and return local file path.
 
-        Creates file: pdfs/{category}/{series}/{product_id}.pdf
+        Creates file: pdfs/{vendor}/{category}/{series}/{product_id}.pdf
 
         :param record: CameraRecord with camera_id, product_category, product_series
         :param pdf_data: Downloaded PDF bytes
@@ -117,11 +120,12 @@ class DatasetManager:
         :param pdf_url: URL of the PDF for cache tracking
         :return: Local file path relative to project root
         """
-        # Normalize category and series names for directory structure
+        # Normalize vendor, category and series names for directory structure
+        vendor_dir = record.source.upper().replace(" ", "_")
         category_dir = record.product_category.upper().replace(" ", "_")
         series_dir = record.product_series.replace(" ", "_")
 
-        pdf_parent_dir = PDFS_DIR / category_dir / series_dir
+        pdf_parent_dir = PDFS_DIR / vendor_dir / category_dir / series_dir
         pdf_parent_dir.mkdir(parents=True, exist_ok=True)
 
         file_path = pdf_parent_dir / f"{record.camera_id}.pdf"
