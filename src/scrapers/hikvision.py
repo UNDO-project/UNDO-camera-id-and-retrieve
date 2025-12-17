@@ -17,6 +17,7 @@ from src.config import (
 )
 from src.models.camera import CategoryLink, CameraRecord
 from src.scrapers.base import CameraScraperBase
+from src.scrapers.managers import DownloadManager, ProtocolRelativeURLNormalizer
 from src.storage.download_cache import DownloadCache
 
 
@@ -26,6 +27,7 @@ class HikvisionCameraScraper(CameraScraperBase):
 
     Handles fetching camera categories, product listings,
     and individual camera records from HikVision Europe site.
+    Uses composition pattern with DownloadManager for handling downloads.
     """
 
     def __init__(self, download_cache: DownloadCache | None = None) -> None:
@@ -38,6 +40,12 @@ class HikvisionCameraScraper(CameraScraperBase):
         self.download_cache = download_cache
         self._browser: Browser | None = None
         self._playwright = None
+
+        # Composition: Inject download manager with protocol-relative URL strategy
+        self.url_normalizer = ProtocolRelativeURLNormalizer()
+        self.download_manager = DownloadManager(
+            url_normalizer=self.url_normalizer, download_cache=download_cache
+        )
 
     async def _get_browser(self) -> Browser:
         """Lazily initialize Playwright browser."""
@@ -476,91 +484,47 @@ class HikvisionCameraScraper(CameraScraperBase):
         finally:
             await context.close()
 
-    async def download_and_organize_images(self, record: CameraRecord) -> List[str]:
-        r"""
-        Download all carousel images and organize them by product ID.
+    async def download(self, url: str) -> bytes:
+        """
+        Implement ContentDownloader protocol for DownloadManager.
 
-        Skips images already in cache to reduce server burden.
+        Hikvision-specific implementation with fallback to Playwright on 403.
+
+        :param url: Absolute URL to download from
+        :return: Downloaded content as bytes
+        """
+        try:
+            return await self._download_image_httpx(url)
+        except httpx.HTTPStatusError as e:
+            status = getattr(getattr(e, "response", None), "status_code", None)
+            if status == 403:
+                logger.warning(f"Got 403 from httpx; retrying via Playwright: {url}")
+                return await self._download_image_playwright(url)
+            raise
+
+    async def download_and_organize_images(self, record: CameraRecord) -> List[str]:
+        """
+        Download and organize images using the download manager.
+
+        Delegates to DownloadManager which handles caching, deduplication,
+        and organization.
 
         :param record: CameraRecord containing image URLs
         :return: List of local file paths
         """
-        if not record.images:
-            return []
-
-        logger.info(f"Processing {len(record.images)} images for {record.model_name}")
-        image_data_list = []
-        skipped_count = 0
-
-        for idx, image_url in enumerate(record.images):
-            try:
-                # Normalize URL (handle protocol-relative URLs)
-                full_url = self._normalize_url(image_url)
-                if not full_url:
-                    continue
-
-                # Check cache before downloading
-                if self.download_cache and self.download_cache.has_downloaded(full_url):
-                    logger.debug(f"Skipping cached image: {full_url}")
-                    skipped_count += 1
-                    continue
-
-                try:
-                    image_data = await self._download_image_httpx(full_url)
-                except httpx.HTTPStatusError as e:
-                    status = getattr(getattr(e, "response", None), "status_code", None)
-                    if status == 403:
-                        logger.warning(
-                            f"Got 403 from httpx for image; retrying via Playwright: {full_url}"
-                        )
-                        image_data = await self._download_image_playwright(full_url)
-                    else:
-                        raise
-
-                # Check for duplicate content
-                if self.download_cache:
-                    duplicate_path = self.download_cache.check_content_duplicate(
-                        image_data
-                    )
-                    if duplicate_path:
-                        logger.info(f"Image content already stored at {duplicate_path}")
-                        image_data_list.append((full_url, image_data))
-                        skipped_count += 1
-                        continue
-
-                image_data_list.append((full_url, image_data))
-                logger.debug(f"Downloaded image {idx + 1}/{len(record.images)}")
-
-            except Exception as e:
-                logger.error(f"Failed to download image {image_url}: {e}")
-                continue
-
-        if skipped_count > 0:
-            logger.info(f"Skipped {skipped_count} cached image(s)")
-
-        # Store downloaded images using DatasetManager
-        from src.storage.dataset import DatasetManager
-
-        dataset_manager = DatasetManager()
-        local_paths = dataset_manager.organize_images(
-            record, image_data_list, self.download_cache
+        return await self.download_manager.download_and_organize_images(
+            record=record, image_downloader=self, base_url=self.base_url
         )
 
-        logger.info(
-            f"Saved {len(local_paths)} images for {record.model_name} "
-            f"(skipped {skipped_count})"
+    async def download_and_save_pdf(self, record: CameraRecord) -> str | None:
+        """
+        Download and save PDF using the download manager.
+
+        Delegates to DownloadManager which handles caching and deduplication.
+
+        :param record: CameraRecord containing datasheet URL
+        :return: Local file path or None if failed
+        """
+        return await self.download_manager.download_and_save_pdf(
+            record=record, pdf_downloader=self, base_url=self.base_url
         )
-        return local_paths
-
-    # download_and_save_pdf() inherited from CameraScraperBase
-
-    def _normalize_pdf_url(self, url: str) -> str | None:
-        """
-        Override base implementation to handle Hikvision's protocol-relative URLs.
-
-        Hikvision uses protocol-relative URLs (starting with '//').
-
-        :param url: URL that may be protocol-relative or regular
-        :return: Normalized absolute URL, or None if URL is invalid
-        """
-        return self._normalize_url(url)
