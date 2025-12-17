@@ -114,7 +114,7 @@ class HikvisionCameraScraper(CameraScraperBase):
                 logger.info(f"Extracted {len(product_urls)}/{total_count} product URLs")
 
                 # Check if we have all products
-                if total_count > 0 and len(product_urls) >= total_count:
+                if 0 < total_count <= len(product_urls):
                     break
 
                 # Click "Next" button to go to next page
