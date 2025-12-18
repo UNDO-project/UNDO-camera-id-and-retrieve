@@ -68,7 +68,7 @@ class CameraRecord(BaseModel):
     product_category: str = Field(..., description="Top-level product category")
     product_series: str = Field(..., description="Product series name")
 
-    class Config:
+    class ConfigDict:
         """Pydantic config."""
 
         arbitrary_types_allowed = True

@@ -6,6 +6,7 @@ from loguru import logger
 from src.config import AXIS_BASE_URL, AXIS_PRODUCTS_URL
 from src.models.camera import CategoryLink, CameraRecord
 from src.scrapers.base import CameraScraperBase
+from src.scrapers.managers import DownloadManager, RelativeURLNormalizer
 from src.storage.download_cache import DownloadCache
 
 
@@ -14,6 +15,7 @@ class AxisCameraScraper(CameraScraperBase):
     Scraper for Axis Communications network cameras.
 
     Handles fetching camera categories and individual camera records.
+    Uses composition pattern with DownloadManager for handling downloads.
     """
 
     def __init__(self, download_cache: DownloadCache | None = None) -> None:
@@ -24,6 +26,12 @@ class AxisCameraScraper(CameraScraperBase):
         """
         super().__init__(AXIS_BASE_URL)
         self.download_cache = download_cache
+
+        # Composition: Inject download manager with strategy
+        self.url_normalizer = RelativeURLNormalizer()
+        self.download_manager = DownloadManager(
+            url_normalizer=self.url_normalizer, download_cache=download_cache
+        )
 
     async def fetch_categories(self) -> list[CategoryLink]:
         r"""
@@ -150,7 +158,7 @@ class AxisCameraScraper(CameraScraperBase):
         return products
 
     async def fetch_product_details(
-        self, product_url: str, category_name: str, series_name: str
+        self, product_url: str, category_name: str, series_name: str | None = None
     ) -> CameraRecord:
         r"""
         Fetch detailed information about a specific product from its page.
@@ -330,122 +338,40 @@ class AxisCameraScraper(CameraScraperBase):
 
         return specifications
 
-    async def download_and_organize_images(self, record: CameraRecord) -> list[str]:
-        r"""
-        Download all carousel images and organize them by product ID.
+    async def download(self, url: str) -> bytes:
+        """
+        Implement ContentDownloader protocol for DownloadManager.
 
-        Skips images already in cache to reduce server burden.
+        Simple HTTP download using base class method.
+
+        :param url: Absolute URL to download from
+        :return: Downloaded content as bytes
+        """
+        return await self.download_image(url)
+
+    async def download_and_organize_images(self, record: CameraRecord) -> list[str]:
+        """
+        Download and organize images using the download manager.
+
+        Delegates to DownloadManager which handles caching, deduplication,
+        and organization.
 
         :param record: CameraRecord containing image URLs
         :return: List of local file paths
         """
-        if not record.images:
-            return []
-
-        logger.info(f"Processing {len(record.images)} images for {record.model_name}")
-        image_data_list = []
-        skipped_count = 0
-
-        for idx, image_url in enumerate(record.images):
-            try:
-                # Handle relative URLs
-                if image_url.startswith("/"):
-                    full_url = f"{AXIS_BASE_URL}{image_url}"
-                else:
-                    full_url = image_url
-
-                # Check cache before downloading
-                if self.download_cache and self.download_cache.has_downloaded(full_url):
-                    logger.debug(f"Skipping cached image: {full_url}")
-                    skipped_count += 1
-                    continue
-
-                image_data = await self.download_image(full_url)
-
-                # Check for duplicate content
-                if self.download_cache:
-                    duplicate_path = self.download_cache.check_content_duplicate(
-                        image_data
-                    )
-                    if duplicate_path:
-                        logger.info(f"Image content already stored at {duplicate_path}")
-                        image_data_list.append((full_url, image_data))
-                        skipped_count += 1
-                        continue
-
-                image_data_list.append((full_url, image_data))
-                logger.debug(f"Downloaded image {idx + 1}/{len(record.images)}")
-
-            except Exception as e:
-                logger.error(f"Failed to download image {image_url}: {e}")
-                continue
-
-        if skipped_count > 0:
-            logger.info(f"Skipped {skipped_count} cached image(s)")
-
-        # Store downloaded images using DatasetManager
-        from src.storage.dataset import DatasetManager
-
-        dataset_manager = DatasetManager()
-        local_paths = dataset_manager.organize_images(
-            record, image_data_list, self.download_cache
+        return await self.download_manager.download_and_organize_images(
+            record=record, image_downloader=self, base_url=self.base_url
         )
-
-        logger.info(
-            f"Saved {len(local_paths)} images for {record.model_name} "
-            f"(skipped {skipped_count})"
-        )
-        return local_paths
 
     async def download_and_save_pdf(self, record: CameraRecord) -> str | None:
-        r"""
-        Download datasheet PDF and save to organized location.
+        """
+        Download and save PDF using the download manager.
 
-        Skips PDFs already in cache to reduce server burden.
+        Delegates to DownloadManager which handles caching and deduplication.
 
         :param record: CameraRecord containing datasheet URL
         :return: Local file path or None if failed
         """
-        if not record.datasheet_url:
-            return None
-
-        logger.info(f"Processing PDF for {record.model_name}")
-        try:
-            # Handle relative URLs
-            if record.datasheet_url.startswith("/"):
-                full_url = f"{AXIS_BASE_URL}{record.datasheet_url}"
-            else:
-                full_url = record.datasheet_url
-
-            # Check cache before downloading
-            if self.download_cache and self.download_cache.has_downloaded(full_url):
-                cached_path = self.download_cache.get_downloaded_path(full_url)
-                logger.info(f"Using cached PDF for {record.model_name}: {cached_path}")
-                return cached_path
-
-            pdf_data = await self.download_pdf(full_url)
-
-            # Check for duplicate content
-            if self.download_cache:
-                duplicate_path = self.download_cache.check_content_duplicate(pdf_data)
-                if duplicate_path:
-                    logger.info(
-                        f"PDF content already stored at {duplicate_path}, "
-                        f"reusing for {record.model_name}"
-                    )
-                    return duplicate_path
-
-            # Store PDF using DatasetManager
-            from src.storage.dataset import DatasetManager
-
-            dataset_manager = DatasetManager()
-            local_path = dataset_manager.save_pdf(
-                record, pdf_data, self.download_cache, full_url
-            )
-
-            logger.info(f"Saved PDF for {record.model_name}")
-            return local_path
-
-        except Exception as e:
-            logger.error(f"Failed to download PDF for {record.model_name}: {e}")
-            return None
+        return await self.download_manager.download_and_save_pdf(
+            record=record, pdf_downloader=self, base_url=self.base_url
+        )

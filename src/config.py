@@ -15,12 +15,16 @@ DEFAULT_HEADERS = {
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
         "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     ),
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
     "Accept-Language": "en-US,en;q=0.9",
-    "Accept-Encoding": "gzip, deflate",
+    "Accept-Encoding": "gzip, deflate, br",
     "DNT": "1",
     "Connection": "keep-alive",
     "Upgrade-Insecure-Requests": "1",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none",
+    "Cache-Control": "max-age=0",
 }
 
 # Output paths
@@ -45,6 +49,44 @@ MODELS_DIR.mkdir(exist_ok=True)
 # Axis Communications URLs
 AXIS_BASE_URL = "https://www.axis.com"
 AXIS_PRODUCTS_URL = f"{AXIS_BASE_URL}/products/network-cameras"
+
+# HikVision URLs
+HIKVISION_BASE_URL = "https://www.hikvision.com"
+HIKVISION_REGION = "europe"
+HIKVISION_IP_PRODUCTS_URL = (
+    f"{HIKVISION_BASE_URL}/{HIKVISION_REGION}/products/IP-Products/"
+)
+HIKVISION_ITS_PRODUCTS_URL = (
+    f"{HIKVISION_BASE_URL}/{HIKVISION_REGION}/products/ITS-Products/traffic-cameras/"
+)
+
+HIKVISION_THERMAL_PRODUCTS_URL = (
+    f"{HIKVISION_BASE_URL}/{HIKVISION_REGION}/products/Thermal-Products"
+)
+
+
+# CSS Selectors for Playwright
+HIKVISION_SELECTORS = {
+    "search_list": ".search-list",
+    "subcategory_dropdown": "[data-title-type='subcategory']",
+    "subcategory_radio": "input[type='radio'][value='{subcategory}']",
+    "product_count": ".sum-number-of-products",
+    "product_grid": ".layout4-wrapper",
+    "product_link": ".btn-details-link",
+    "next_page_btn": "li span.next",
+    "pagination": ".pagination-section",
+}
+
+# Subcategory filter values (exact text as shown in UI)
+HIKVISION_IP_SUBCATEGORIES = {
+    "Network Cameras": "Network Cameras",
+    "PTZ Cameras": "PTZ Cameras",
+    "Explosion-Proof Series": "Explosion-Proof and Anti-Corrosion Series",
+}
+
+# Playwright settings
+HIKVISION_PAGE_LOAD_TIMEOUT = 30000  # 30 seconds
+HIKVISION_PRODUCTS_PER_PAGE = 12  # Default pagination
 
 
 def get_random_delay() -> float:

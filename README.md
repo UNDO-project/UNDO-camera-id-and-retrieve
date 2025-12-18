@@ -25,8 +25,15 @@ cp .env-sample .env
 # then edit .env and set CAMERA_DETECTOR_WEIGHTS to your .pt file, or
 # place it at model_weights/yolov8_camera.pt to use the default.
 
-# 5. Scrape Axis cameras (Stage 1)
+# 5. Scrape cameras (Stage 1)
+# Scrape Axis cameras (default)
 python scrape.py
+
+# Or scrape HikVision cameras
+python scrape.py --vendor hikvision
+
+# Or scrape all vendors
+python scrape.py --vendor all
 
 # 6. Build dataset (Stage 2)
 python build_dataset.py
@@ -47,7 +54,9 @@ The project is organized into sequential stages:
 
 1. **Stage 1 – Scrape**
    - Entry points: `scrape.py`, `main.py`.
-   - Scrapes Axis Communications network cameras (categories, series, products).
+   - Scrapes CCTV camera products from supported vendors:
+     - **Axis Communications**: Network cameras (categories, series, products)
+     - **HikVision**: Network cameras, PTZ cameras, and Explosion-Proof series
    - Downloads product images and datasheet PDFs.
    - Writes a verification manifest (`output/verification_manifest.json`) describing
      what was scraped.
@@ -133,14 +142,30 @@ created automatically at runtime.
 
 ## Running the pipeline
 
-### Stage 1 – Scrape Axis cameras
+### Stage 1 – Scrape cameras
 
+Scrape Axis Communications cameras (default):
 ```bash
 python scrape.py
 ```
 
+Or scrape HikVision cameras:
+```bash
+python scrape.py --vendor hikvision
+```
+
+Or scrape all vendors:
+```bash
+python scrape.py --vendor all
+```
+
 This will populate `data/images`, `data/pdfs`, and generate
 `output/verification_manifest.json`.
+
+**Supported vendors:**
+- `axis`: Axis Communications (Network cameras)
+- `hikvision`: HikVision (Network cameras, PTZ cameras, Explosion-Proof series)
+- `all`: Scrape all supported vendors sequentially
 
 ### Stage 2 – Build parquet dataset
 
