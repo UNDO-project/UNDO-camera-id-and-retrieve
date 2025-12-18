@@ -60,6 +60,10 @@ HIKVISION_ITS_PRODUCTS_URL = (
     f"{HIKVISION_BASE_URL}/{HIKVISION_REGION}/products/ITS-Products/traffic-cameras/"
 )
 
+HIKVISION_THERMAL_PRODUCTS_URL = (
+    f"{HIKVISION_BASE_URL}/{HIKVISION_REGION}/products/Thermal-Products"
+)
+
 
 # CSS Selectors for Playwright
 HIKVISION_SELECTORS = {
