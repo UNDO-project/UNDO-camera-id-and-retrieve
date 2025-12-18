@@ -56,6 +56,9 @@ HIKVISION_REGION = "europe"
 HIKVISION_IP_PRODUCTS_URL = (
     f"{HIKVISION_BASE_URL}/{HIKVISION_REGION}/products/IP-Products/"
 )
+HIKVISION_ITS_PRODUCTS_URL = (
+    f"{HIKVISION_BASE_URL}/{HIKVISION_REGION}/products/ITS-Products/traffic-cameras/"
+)
 
 
 # CSS Selectors for Playwright

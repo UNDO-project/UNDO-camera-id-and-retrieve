@@ -12,6 +12,7 @@ from src.config import (
     HIKVISION_BASE_URL,
     HIKVISION_SELECTORS,
     HIKVISION_IP_PRODUCTS_URL,
+    HIKVISION_ITS_PRODUCTS_URL,
     HIKVISION_IP_SUBCATEGORIES,
     DEFAULT_HEADERS,
 )
@@ -155,23 +156,103 @@ class HikvisionCameraScraper(CameraScraperBase):
 
         return product_urls
 
+    async def fetch_its_product_urls(self) -> List[str]:
+        """
+        Fetch all ITS product URLs without filtering (only ~15 products).
+
+        Simpler than IP products since no subcategory filtering needed.
+
+        :return: List of product detail page URLs
+        """
+        browser = await self._get_browser()
+        page = await browser.new_page()
+        product_urls = []
+
+        try:
+            # 1. Navigate to ITS Products page
+            logger.info("Navigating to ITS Products page")
+            await page.goto(HIKVISION_ITS_PRODUCTS_URL, wait_until="networkidle")
+
+            # 2. Wait for product grid to load
+            await page.wait_for_selector(HIKVISION_SELECTORS["product_grid"])
+            await page.wait_for_timeout(2000)  # Extra wait for dynamic content
+
+            # 3. Get product count if available
+            count_locator = page.locator(HIKVISION_SELECTORS["product_count"])
+            count_texts = await count_locator.all_text_contents()
+            counts = []
+            for t in count_texts:
+                digits = re.sub(r"[^\d]", "", (t or "").strip())
+                if digits:
+                    counts.append(int(digits))
+
+            total_count = max(counts) if counts else 0
+            logger.info(f"Found {total_count} ITS products")
+
+            # 4. Extract products with pagination
+            while True:
+                # Extract product links from current page
+                links = page.locator(HIKVISION_SELECTORS["product_link"])
+                count = await links.count()
+
+                for i in range(count):
+                    href = await links.nth(i).get_attribute("href")
+                    if href and href not in product_urls:
+                        product_urls.append(href)
+
+                logger.info(
+                    f"Extracted {len(product_urls)}/{total_count if total_count > 0 else '?'} ITS product URLs"
+                )
+
+                # Check if we have all products
+                if 0 < total_count <= len(product_urls):
+                    break
+
+                # Click "Next" button to go to next page
+                next_btn = page.locator(HIKVISION_SELECTORS["next_page_btn"])
+                if await next_btn.is_visible():
+                    await next_btn.click()
+                    # Wait for navigation and network to settle
+                    await page.wait_for_load_state("networkidle")
+                    await page.wait_for_selector(HIKVISION_SELECTORS["product_grid"])
+                else:
+                    logger.info("No more ITS product pages available")
+                    break  # No more pages to load
+
+        finally:
+            await page.close()
+
+        logger.info(f"Total ITS products found: {len(product_urls)}")
+        return product_urls
+
     async def fetch_categories(self) -> List[CategoryLink]:
         r"""
-        Return predefined HikVision camera categories.
+        Return predefined HikVision camera categories (IP + ITS products).
 
         :return: List of category links
         """
         logger.info("Fetching HikVision product categories")
 
         categories = []
+
+        # Add IP product subcategories
         for name, filter_value in HIKVISION_IP_SUBCATEGORIES.items():
             categories.append(
                 CategoryLink(
-                    name=name,
+                    name=f"IP - {name}",  # Prefix for clarity
                     href=filter_value,  # Store filter value
-                    node_id=None,
+                    node_id="IP",  # Tag to identify product type
                 )
             )
+
+        # Add single ITS category (no filtering needed)
+        categories.append(
+            CategoryLink(
+                name="ITS - Traffic Cameras",
+                href=HIKVISION_ITS_PRODUCTS_URL,  # Direct URL to ITS products
+                node_id="ITS",  # Tag to identify product type
+            )
+        )
 
         logger.info(f"Found {len(categories)} HikVision categories")
         return categories
@@ -180,14 +261,24 @@ class HikvisionCameraScraper(CameraScraperBase):
         r"""
         Fetch all product URLs for a category using Playwright.
 
+        Routes to appropriate method based on product type (IP vs ITS).
+
         :param category: Category with subcategory filter value in href
         :return: List of CategoryLink objects (each pointing to a product)
 
         """
-        subcategory_filter = category.href
-
-        # Use Playwright to get all product URLs
-        product_urls = await self.fetch_product_urls_with_playwright(subcategory_filter)
+        # Check if this is an ITS or IP category
+        if category.node_id == "ITS":
+            # Fetch ITS products directly (no filtering)
+            logger.info(f"Fetching ITS products for category: {category.name}")
+            product_urls = await self.fetch_its_product_urls()
+        else:
+            # Fetch IP products with subcategory filtering
+            subcategory_filter = category.href
+            logger.info(f"Fetching IP products for category: {category.name}")
+            product_urls = await self.fetch_product_urls_with_playwright(
+                subcategory_filter
+            )
 
         # Wrap each URL as a CategoryLink for compatibility with main.py
         product_links = []
