@@ -15,6 +15,7 @@ from src.config import (
     HIKVISION_ITS_PRODUCTS_URL,
     HIKVISION_THERMAL_PRODUCTS_URL,
     DEFAULT_HEADERS,
+    HIKVISION_IP_SUBCATEGORIES,
 )
 from src.models.camera import CategoryLink, CameraRecord
 from src.scrapers.base import CameraScraperBase
@@ -304,15 +305,15 @@ class HikvisionCameraScraper(CameraScraperBase):
 
         categories = []
 
-        # # Add IP product subcategories
-        # for name, filter_value in HIKVISION_IP_SUBCATEGORIES.items():
-        #     categories.append(
-        #         CategoryLink(
-        #             name=f"IP - {name}",  # Prefix for clarity
-        #             href=filter_value,  # Store filter value
-        #             node_id="IP",  # Tag to identify product type
-        #         )
-        #     )
+        # Add IP product subcategories
+        for name, filter_value in HIKVISION_IP_SUBCATEGORIES.items():
+            categories.append(
+                CategoryLink(
+                    name=f"IP - {name}",  # Prefix for clarity
+                    href=filter_value,  # Store filter value
+                    node_id="IP",  # Tag to identify product type
+                )
+            )
 
         # Add single ITS category (no filtering needed)
         categories.append(
