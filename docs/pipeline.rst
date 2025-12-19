@@ -13,6 +13,24 @@ Stage 1 – Scrape
    :show-inheritance:
    :noindex:
 
+.. automodule:: src.scrapers.hikvision
+   :members: HikvisionCameraScraper
+   :undoc-members:
+   :show-inheritance:
+   :noindex:
+
+.. automodule:: src.scrapers.managers.download_manager
+   :members: ContentDownloader, DownloadManager
+   :undoc-members:
+   :show-inheritance:
+   :noindex:
+
+.. automodule:: src.scrapers.managers.url_normalizer
+   :members: URLNormalizer, RelativeURLNormalizer, ProtocolRelativeURLNormalizer
+   :undoc-members:
+   :show-inheritance:
+   :noindex:
+
 .. automodule:: src.storage.manifest
    :members: ManifestRecorder
    :undoc-members:
