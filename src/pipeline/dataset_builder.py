@@ -8,6 +8,7 @@ from loguru import logger
 
 from src.config import DATA_DIR, OUTPUT_DIR
 from src.models.camera import CameraRecord
+from src.storage.versioning import DatasetVersionManager
 
 
 class DatasetBuilder:
@@ -33,6 +34,8 @@ class DatasetBuilder:
         append: bool = False,
         merge_strategy: str = "update",
         force: bool = False,
+        version_mode: str = "none",
+        version_number: int | None = None,
     ) -> None:
         r"""
         Initialize dataset builder.
@@ -42,6 +45,8 @@ class DatasetBuilder:
         :param append: If True, append to existing dataset instead of overwriting
         :param merge_strategy: Strategy for handling duplicate camera_ids (update|skip|error)
         :param force: If True, skip user confirmation prompts
+        :param version_mode: Versioning mode (auto|manual|none)
+        :param version_number: Manual version number (requires version_mode=manual)
         """
         if manifest_path is None:
             manifest_path = OUTPUT_DIR / "verification_manifest.json"
@@ -60,11 +65,19 @@ class DatasetBuilder:
         self.append = append
         self.merge_strategy = merge_strategy
         self.force = force
+        self.version_mode = version_mode
+        self.version_number = version_number
         self.merge_stats: dict[str, int] = {
             "records_added": 0,
             "records_updated": 0,
             "records_skipped": 0,
         }
+
+        # Initialize version manager if versioning is enabled
+        if self.version_mode != "none":
+            self.version_manager = DatasetVersionManager(self.output_path.parent)
+        else:
+            self.version_manager = None
 
     def load_manifest(self) -> bool:
         r"""
@@ -371,12 +384,73 @@ class DatasetBuilder:
                 df = new_df
                 self.merge_stats["records_added"] = len(df)
 
-            # Save to parquet
-            self.output_path.parent.mkdir(parents=True, exist_ok=True)
-            df.to_parquet(self.output_path, index=False, engine="pyarrow")
+            # Handle versioning
+            if self.version_manager:
+                # Create new version
+                if self.version_mode == "auto":
+                    version = self.version_manager.create_version(
+                        record_count=len(df),
+                        manifest_path=self.manifest_path,
+                        append_mode=self.append,
+                        merge_strategy=self.merge_strategy if self.append else None,
+                        records_added=self.merge_stats["records_added"],
+                        records_updated=self.merge_stats["records_updated"],
+                    )
+                    versioned_path = self.version_manager.get_version_path(version)
+
+                    # Save to versioned file
+                    df.to_parquet(versioned_path, index=False, engine="pyarrow")
+                    logger.success(
+                        f"Dataset saved as version {version}: {versioned_path}"
+                    )
+
+                    # Update symlinks
+                    self.version_manager.update_symlinks(version)
+                    logger.info(f"Symlinks updated to version {version}")
+
+                elif self.version_mode == "manual":
+                    if self.version_number is None:
+                        logger.error("Manual version mode requires --version number")
+                        return False
+
+                    version = self.version_manager.create_version(
+                        record_count=len(df),
+                        manifest_path=self.manifest_path,
+                        append_mode=self.append,
+                        merge_strategy=self.merge_strategy if self.append else None,
+                        records_added=self.merge_stats["records_added"],
+                        records_updated=self.merge_stats["records_updated"],
+                    )
+
+                    # Override version number
+                    metadata = self.version_manager.load_metadata()
+                    metadata["current_version"] = self.version_number
+                    metadata["versions"][-1]["version"] = self.version_number
+                    self.version_manager.save_metadata(metadata)
+
+                    versioned_path = self.version_manager.get_version_path(
+                        self.version_number
+                    )
+                    df.to_parquet(versioned_path, index=False, engine="pyarrow")
+                    logger.success(
+                        f"Dataset saved as version {self.version_number}: {versioned_path}"
+                    )
+
+                    # Update symlinks
+                    self.version_manager.update_symlinks(self.version_number)
+                    logger.info(f"Symlinks updated to version {self.version_number}")
+
+                else:
+                    logger.error(f"Unknown version mode: {self.version_mode}")
+                    return False
+
+            else:
+                # No versioning - save directly
+                self.output_path.parent.mkdir(parents=True, exist_ok=True)
+                df.to_parquet(self.output_path, index=False, engine="pyarrow")
+                logger.success(f"Dataset saved to {self.output_path}")
 
             # Log results
-            logger.success(f"Dataset saved to {self.output_path}")
             logger.info(f"Total records in dataset: {len(df)}")
             if self.append:
                 logger.info(
