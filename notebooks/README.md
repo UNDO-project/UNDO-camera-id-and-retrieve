@@ -4,7 +4,7 @@ This directory contains Jupyter notebooks for interactive demonstrations and exp
 
 ## Available Notebooks
 
-### dataset_append_demo.ipynb
+### dataset_append_demo.ipynb (Phase 1)
 
 **Purpose**: Interactive demonstration of Phase 1 dataset append functionality using real production data
 
@@ -38,6 +38,45 @@ jupyter lab notebooks/dataset_append_demo.ipynb
 8. Test overwrite mode (complete replacement)
 9. Analyze dataset growth by source/category
 10. Restore original dataset
+
+### dataset_versioning_demo.ipynb (Phase 2)
+
+**Purpose**: Interactive demonstration of Phase 2 dataset versioning functionality using real production data
+
+**Dataset**: Uses copies of actual production dataset (`output/products.parquet` → `notebooks/data/products.parquet`)
+
+**Features Demonstrated**:
+- Auto-versioning mode (automatic version increments)
+- Creating multiple versions (v1, v2, v3)
+- Version metadata tracking (timestamps, record counts, hashes)
+- Manifest versioning with SHA-256 hashing
+- Symlink management (automatic updates)
+- Listing version history
+- Manual cleanup of old versions
+- Append mode integration with versioning
+- Parent version tracking
+
+**Usage**:
+```bash
+# Launch Jupyter from project root
+jupyter notebook notebooks/dataset_versioning_demo.ipynb
+
+# Or use JupyterLab
+jupyter lab notebooks/dataset_versioning_demo.ipynb
+```
+
+**Key Sections**:
+1. Create version 1 with auto-versioning
+2. Verify version 1 creation and metadata
+3. Create version 2 with append mode
+4. Compare versions 1 and 2
+5. Create version 3 (overwrite mode)
+6. List all versions
+7. Verify symlinks
+8. Test manual cleanup
+9. Verify files after cleanup
+10. Verify manifest hashing
+11. Cleanup test files
 
 ## Running Notebooks
 
