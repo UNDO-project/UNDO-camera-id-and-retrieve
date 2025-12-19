@@ -30,6 +30,12 @@ pytest tests/test_dataset_versioning.py
 echo "Done..."
 echo "==============================================="
 
+echo "Running dataset versioning validation tests"
+pytest tests/test_validation_integration.py
+echo "Done..."
+echo "==============================================="
+
+
 echo "Running detector tests"
 pytest tests/test_detector.py
 echo "Done..."
