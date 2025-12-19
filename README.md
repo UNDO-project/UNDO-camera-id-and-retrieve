@@ -1,4 +1,4 @@
-# cctv-scrapers
+# CCTV Identification Research
 
 A multi-stage pipeline for scraping CCTV camera product data from vendor sites,
 building a structured dataset, validating it, and identifying
