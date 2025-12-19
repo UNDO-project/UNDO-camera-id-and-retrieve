@@ -34,6 +34,12 @@ Stage 2 – Build dataset
    :show-inheritance:
    :noindex:
 
+.. automodule:: src.storage.versioning
+   :members: DatasetVersionManager
+   :undoc-members:
+   :show-inheritance:
+   :noindex:
+
 Stage 3 – Validate dataset
 --------------------------
 
