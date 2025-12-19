@@ -25,6 +25,11 @@ pytest tests/test_dataset_append.py
 echo "Done..."
 echo "==============================================="
 
+echo "Running dataset versioning tests"
+pytest tests/test_dataset_versioning.py
+echo "Done..."
+echo "==============================================="
+
 echo "Running detector tests"
 pytest tests/test_detector.py
 echo "Done..."
