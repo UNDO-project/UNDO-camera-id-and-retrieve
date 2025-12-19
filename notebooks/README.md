@@ -41,6 +41,7 @@ jupyter lab notebooks/dataset_append_demo.ipynb
 
 ### dataset_versioning_demo.ipynb (Phase 2)
 
+
 **Purpose**: Interactive demonstration of Phase 2 dataset versioning functionality using real production data
 
 **Dataset**: Uses copies of actual production dataset (`output/products.parquet` → `notebooks/data/products.parquet`)
@@ -76,6 +77,43 @@ jupyter lab notebooks/dataset_versioning_demo.ipynb
 8. Test manual cleanup
 9. Verify files after cleanup
 10. Verify manifest hashing
+11. Cleanup test files
+
+### validation_integration_demo.ipynb (Phase 3)
+
+**Purpose**: Interactive demonstration of Phase 3 validation integration with dataset versioning using real production data
+
+**Dataset**: Uses copies of actual production dataset (`output/products.parquet` → `notebooks/data/products.parquet`)
+
+**Features Demonstrated**:
+- Creating multiple dataset versions
+- Validating current dataset (symlink)
+- Validating specific versions
+- Version-aware validation reports
+- Validating versions created with append mode
+- Comparing validation results across versions
+- Historical validation (older versions remain accessible)
+
+**Usage**:
+```bash
+# Launch Jupyter from project root
+jupyter notebook notebooks/validation_integration_demo.ipynb
+
+# Or use JupyterLab
+jupyter lab notebooks/validation_integration_demo.ipynb
+```
+
+**Key Sections**:
+1. Create version 1
+2. Validate version 1 with version info
+3. Create version 2 with append
+4. Validate version 2 (shows append metadata)
+5. Create version 3 (overwrite mode)
+6. Validate current dataset (symlink, no version info)
+7. List all versions
+8. Validate older version
+9. Compare validation results across versions
+10. Verify symlinks point to current version
 11. Cleanup test files
 
 ## Running Notebooks
