@@ -6,6 +6,7 @@ from pathlib import Path
 from loguru import logger
 
 from src.config import OUTPUT_DIR
+from src.storage.versioning import DatasetVersionManager
 from src.validation.validator import DatasetValidator
 
 
@@ -35,6 +36,12 @@ Examples:
 
   # Generate manifest only (don't validate)
   python -m src.validation.cli --manifest-only
+
+  # Validate specific dataset version
+  python -m src.validation.cli --version 2
+
+  # Validate version with verbose output
+  python -m src.validation.cli --version 1 --verbose
         """,
     )
 
@@ -83,6 +90,13 @@ Examples:
         help="Project root directory for file path resolution (default: current directory)",
     )
 
+    parser.add_argument(
+        "--version",
+        type=int,
+        metavar="VERSION",
+        help="Validate specific dataset version (e.g., --version 2 validates products_v2.parquet)",
+    )
+
     args = parser.parse_args()
 
     # Resolve paths
@@ -98,12 +112,39 @@ Examples:
     if args.project_root:
         project_root = Path(args.project_root)
 
+    # Handle version-specific validation
+    version_number = None
+    version_info = None
+    if args.version is not None:
+        version_number = args.version
+        version_manager = DatasetVersionManager(parquet_path.parent)
+
+        # Check if version exists
+        version_info = version_manager.get_version_info(version_number)
+        if version_info is None:
+            logger.error(f"Version {version_number} not found")
+            logger.info("Available versions:")
+            for v in version_manager.list_versions():
+                logger.info(f"  - Version {v['version']} ({v['timestamp']})")
+            exit(1)
+
+        # Resolve versioned paths
+        parquet_path = version_manager.get_version_path(version_number)
+        manifest_path = parquet_path.parent / version_info["manifest_file"]
+
+        logger.info(f"Validating dataset version {version_number}")
+
     logger.info("CCTV Dataset Validator")
     logger.info(f"Parquet: {parquet_path}")
     logger.info(f"Manifest: {manifest_path}")
 
     # Initialize validator
-    validator = DatasetValidator(parquet_path=parquet_path, manifest_path=manifest_path)
+    validator = DatasetValidator(
+        parquet_path=parquet_path,
+        manifest_path=manifest_path,
+        version_number=version_number,
+        version_info=version_info,
+    )
 
     # Manifest-only mode
     if args.manifest_only:
