@@ -25,17 +25,23 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Build dataset with default paths
+  # Build dataset with default paths (prompts for overwrite if exists)
   python build_dataset.py
 
-  # Custom manifest path
-  python build_dataset.py --manifest data/custom_manifest.json
+  # Force overwrite without confirmation
+  python build_dataset.py --force
 
-  # Custom output parquet path
-  python build_dataset.py --output data/custom_dataset.parquet
+  # Append new data to existing dataset (update duplicates)
+  python build_dataset.py --append
 
-  # Both custom paths
-  python build_dataset.py --manifest data/manifest.json --output data/dataset.parquet
+  # Append with skip strategy (keep original data for duplicates)
+  python build_dataset.py --append --merge-strategy skip
+
+  # Append with error on duplicates
+  python build_dataset.py --append --merge-strategy error
+
+  # Custom paths with append
+  python build_dataset.py --manifest data/manifest.json --output data/dataset.parquet --append
         """,
     )
 
@@ -53,6 +59,27 @@ Examples:
         help="Path to output parquet file (default: output/products.parquet)",
     )
 
+    parser.add_argument(
+        "--append",
+        action="store_true",
+        help="Append to existing dataset instead of overwriting",
+    )
+
+    parser.add_argument(
+        "--merge-strategy",
+        choices=["update", "skip", "error"],
+        default="update",
+        help="Strategy for handling duplicate camera_ids (default: update). "
+        "'update' overwrites duplicates with new data, 'skip' keeps original data, "
+        "'error' fails if duplicates are found.",
+    )
+
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Skip confirmation prompts (useful for automation)",
+    )
+
     args = parser.parse_args()
 
     # Resolve paths
@@ -67,9 +94,19 @@ Examples:
     logger.info("CCTV Dataset Building Stage")
     logger.info(f"Manifest: {manifest_path}")
     logger.info(f"Output: {output_path}")
+    if args.append:
+        logger.info(f"Mode: Append with merge strategy '{args.merge_strategy}'")
+    else:
+        logger.info("Mode: Overwrite")
 
     # Build dataset
-    builder = DatasetBuilder(manifest_path=manifest_path, output_path=output_path)
+    builder = DatasetBuilder(
+        manifest_path=manifest_path,
+        output_path=output_path,
+        append=args.append,
+        merge_strategy=args.merge_strategy,
+        force=args.force,
+    )
 
     if builder.build_and_save():
         logger.success("Dataset built successfully")
