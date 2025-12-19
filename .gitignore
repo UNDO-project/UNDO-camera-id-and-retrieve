@@ -149,6 +149,7 @@ WARP.md
 model_weights/
 output/
 data/
+notebooks/data/
 
 # MacOS stuff
 .DS_Store
