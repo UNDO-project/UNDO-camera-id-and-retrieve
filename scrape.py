@@ -9,9 +9,8 @@ Usage:
 
 import sys
 
-import main as scraper_main
-
+from src.scraping import main
 
 if __name__ == "__main__":
     sys.argv[0] = "scrape.py"
-    scraper_main.main()
+    main.main()
