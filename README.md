@@ -1,4 +1,4 @@
-# cctv-scrapers
+# CCTV Identification Research
 
 A multi-stage pipeline for scraping CCTV camera product data from vendor sites,
 building a structured dataset, validating it, and identifying
@@ -66,6 +66,10 @@ The project is organized into sequential stages:
    - Reads the manifest and filesystem (`data/images`, `data/pdfs`).
    - Builds a tabular dataset (`output/products.parquet`) of `CameraRecord` rows
      (see `src/models/camera.py`).
+   - **New features:**
+     - **Append mode**: Merge new data with existing datasets (`--append`)
+     - **Dataset versioning**: Track dataset evolution over time (`--version-mode auto`)
+     - **Merge strategies**: Handle duplicates with update/skip/error strategies
 
 3. **Stage 3 – Validate dataset**
    - Entry point: `validate_dataset.py` (CLI in `src/validation/cli.py`).
@@ -169,20 +173,81 @@ This will populate `data/images`, `data/pdfs`, and generate
 
 ### Stage 2 – Build parquet dataset
 
+**Basic usage:**
 ```bash
 python build_dataset.py
 ```
 
 This reads the manifest and filesystem and produces `output/products.parquet`.
 
+**Advanced options:**
+
+**Append mode** - Merge new data with existing dataset:
+```bash
+# Append with update strategy (overwrites duplicates)
+python build_dataset.py --append --merge-strategy update
+
+# Append with skip strategy (keeps original data)
+python build_dataset.py --append --merge-strategy skip
+
+# Append with error strategy (fails on duplicates)
+python build_dataset.py --append --merge-strategy error
+```
+
+**Dataset versioning** - Track dataset evolution over time:
+```bash
+# Build with auto-versioning (creates products_v1.parquet)
+python build_dataset.py --version-mode auto
+
+# Append and create new version
+python build_dataset.py --append --version-mode auto
+
+# List all dataset versions
+python build_dataset.py --list-versions
+
+# Clean up old versions (keep last 3)
+python build_dataset.py --cleanup-versions 3
+```
+
+**Version structure:**
+```
+output/
+├── products.parquet               # Symlink → products_v3.parquet
+├── products_v1.parquet            # Version 1 snapshot
+├── products_v2.parquet            # Version 2 snapshot
+├── products_v3.parquet            # Version 3 snapshot (current)
+├── verification_manifest.json     # Symlink → verification_manifest_v3.json
+├── verification_manifest_v1.json  # Version 1 manifest
+├── verification_manifest_v2.json  # Version 2 manifest
+├── verification_manifest_v3.json  # Version 3 manifest
+└── dataset_metadata.json          # Version history and metadata
+```
+
 ### Stage 3 – Validate dataset
 
+**Basic usage:**
 ```bash
+# Validate current dataset (symlink)
 python validate_dataset.py
 ```
 
 This runs the validator CLI, which loads the parquet dataset and manifest,
 performs checks, and prints a validation report.
+
+**Version-aware validation:**
+```bash
+# Validate specific version
+python validate_dataset.py --version 2
+
+# Validate version with verbose output
+python validate_dataset.py --version 1 --verbose
+```
+
+Version-aware validation reports include:
+- Version number and timestamp
+- Record count and manifest hash
+- Append mode details (if applicable)
+- Parent version tracking
 
 ### Stage 4 – Camera Identification & Retrieval
 

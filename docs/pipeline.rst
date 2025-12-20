@@ -13,6 +13,24 @@ Stage 1 – Scrape
    :show-inheritance:
    :noindex:
 
+.. automodule:: src.scrapers.hikvision
+   :members: HikvisionCameraScraper
+   :undoc-members:
+   :show-inheritance:
+   :noindex:
+
+.. automodule:: src.scrapers.managers.download_manager
+   :members: ContentDownloader, DownloadManager
+   :undoc-members:
+   :show-inheritance:
+   :noindex:
+
+.. automodule:: src.scrapers.managers.url_normalizer
+   :members: URLNormalizer, RelativeURLNormalizer, ProtocolRelativeURLNormalizer
+   :undoc-members:
+   :show-inheritance:
+   :noindex:
+
 .. automodule:: src.storage.manifest
    :members: ManifestRecorder
    :undoc-members:
@@ -30,6 +48,12 @@ Stage 2 – Build dataset
 
 .. automodule:: src.storage.dataset
    :members: DatasetManager
+   :undoc-members:
+   :show-inheritance:
+   :noindex:
+
+.. automodule:: src.storage.versioning
+   :members: DatasetVersionManager
    :undoc-members:
    :show-inheritance:
    :noindex:

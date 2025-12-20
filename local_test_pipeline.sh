@@ -5,10 +5,36 @@ export PYTHONPATH
 # Navigate to the script's directory (project root)
 cd "$(dirname "$0")" || exit
 
+echo "Running Axis extraction tests"
+pytest tests/test_axis_extraction.py
+echo "Done..."
+echo "==============================================="
+
+echo "Running Hikvision extraction tests"
+pytest tests/test_hikvision_extraction.py
+echo "Done..."
+echo "==============================================="
+
 echo "Running dataset creation tests"
 pytest tests/test_dataset_creation.py
 echo "Done..."
 echo "==============================================="
+
+echo "Running dataset append tests"
+pytest tests/test_dataset_append.py
+echo "Done..."
+echo "==============================================="
+
+echo "Running dataset versioning tests"
+pytest tests/test_dataset_versioning.py
+echo "Done..."
+echo "==============================================="
+
+echo "Running dataset versioning validation tests"
+pytest tests/test_validation_integration.py
+echo "Done..."
+echo "==============================================="
+
 
 echo "Running detector tests"
 pytest tests/test_detector.py
@@ -20,17 +46,7 @@ pytest tests/test_download_cache.py
 echo "Done..."
 echo "==============================================="
 
-echo "Running Axis extraction tests"
-pytest tests/test_axis_extraction.py
-echo "Done..."
-echo "==============================================="
-
 echo "Running identification service tests"
 pytest tests/test_identification_service.py
-echo "Done..."
-echo "==============================================="
-
-echo "Running Hikvision extraction tests"
-pytest tests/test_hikvision_extraction.py
 echo "Done..."
 echo "==============================================="

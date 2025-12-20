@@ -34,12 +34,16 @@ class DatasetValidator:
         self,
         parquet_path: Path | str | None = None,
         manifest_path: Path | str | None = None,
+        version_number: int | None = None,
+        version_info: dict[str, Any] | None = None,
     ) -> None:
         r"""
         Initialize validator.
 
         :param parquet_path: Path to products.parquet (default: output/products.parquet)
         :param manifest_path: Path to verification_manifest.json (default: output/verification_manifest.json)
+        :param version_number: Version number being validated (optional)
+        :param version_info: Version metadata dict (optional)
         """
         if parquet_path is None:
             parquet_path = OUTPUT_DIR / "products.parquet"
@@ -53,6 +57,8 @@ class DatasetValidator:
 
         self.parquet_path = parquet_path
         self.manifest_path = manifest_path
+        self.version_number = version_number
+        self.version_info = version_info
         self.df: pd.DataFrame | None = None
         self.manifest_data: dict[str, Any] | None = None
         self.errors: list[dict[str, Any]] = []
@@ -475,6 +481,25 @@ class DatasetValidator:
 
         print(f"\nDataset: {self.parquet_path}")
         print(f"Manifest: {self.manifest_path}")
+
+        # Display version information if available
+        if self.version_number is not None and self.version_info is not None:
+            print("\n--- VERSION INFORMATION ---")
+            print(f"Version: {self.version_number}")
+            print(f"Timestamp: {self.version_info.get('timestamp', 'N/A')}")
+            print(f"Record Count: {self.version_info.get('record_count', 'N/A')}")
+            print(
+                f"Manifest Hash: {self.version_info.get('manifest_hash', 'N/A')[:32]}..."
+            )
+            print(f"Append Mode: {self.version_info.get('append_mode', 'N/A')}")
+            if self.version_info.get("append_mode"):
+                print(f"Records Added: {self.version_info.get('records_added', 'N/A')}")
+                print(
+                    f"Records Updated: {self.version_info.get('records_updated', 'N/A')}"
+                )
+                print(
+                    f"Parent Version: {self.version_info.get('parent_version', 'N/A')}"
+                )
 
         print("\n--- VALIDATION SUMMARY ---")
         print(f"Errors: {len(self.errors)}")
