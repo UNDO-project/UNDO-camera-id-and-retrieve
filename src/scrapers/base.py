@@ -5,7 +5,8 @@ from abc import ABC, abstractmethod
 
 import httpx
 
-from src.config import DEFAULT_HEADERS, get_random_delay
+from src.config import DEFAULT_HEADERS
+from src.utils.timing import get_random_delay
 from src.models.camera import CategoryLink, CameraRecord
 
 
