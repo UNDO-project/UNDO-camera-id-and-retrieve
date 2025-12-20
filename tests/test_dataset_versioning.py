@@ -5,7 +5,7 @@ import json
 import pytest
 from loguru import logger
 
-from src.pipeline.dataset_builder import DatasetBuilder
+from src.building.builder import DatasetBuilder
 from src.storage.versioning import DatasetVersionManager
 
 logger.add(lambda msg: print(msg, end=""))

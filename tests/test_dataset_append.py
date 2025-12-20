@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 from loguru import logger
 
-from src.pipeline.dataset_builder import DatasetBuilder
+from src.building.builder import DatasetBuilder
 
 logger.add(lambda msg: print(msg, end=""))
 
