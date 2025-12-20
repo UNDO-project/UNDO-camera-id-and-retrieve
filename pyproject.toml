@@ -1,7 +1,7 @@
 [project]
-name = "cctv-scrapers"
-version = "0.1.0"
-description = "A pipeline to download cctv cameras and related tech from prominent vendors."
+name = "cctv-identification-and-research"
+version = "0.3.0"
+description = "A pipeline to scrape cctv data and identify given cameras in urban settings."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -24,3 +24,9 @@ dependencies = [
     "torch>=2.9.1",
     "ultralytics>=8.3.228",
 ]
+
+[project.scripts]
+cidar-scrape = "src.scraping.main:main"
+cidar-build = "src.building.main:main"
+cidar-validate = "src.validation.cli:main"
+cidar-identify = "src.identification.cli:main"
