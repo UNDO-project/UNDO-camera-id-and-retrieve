@@ -145,7 +145,6 @@ tester.py
 *.db
 logs/
 test_html/
-WARP.md
 model_weights/
 output/
 data/
