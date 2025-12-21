@@ -276,6 +276,119 @@ cidar-identify \
   --min-similarity 0.3
 ```
 
+## API Server
+
+The project includes a FastAPI-based REST API that wraps the identification service,
+enabling remote access for frontend applications and integrations.
+
+### Starting the API server
+
+**Basic usage:**
+```bash
+cidar-api
+```
+
+The API server will start on `http://localhost:8000` by default.
+
+**With custom configuration:**
+```bash
+# Development mode with auto-reload
+CIDAR_API_RELOAD=true cidar-api
+
+# Custom host and port
+CIDAR_API_HOST=0.0.0.0 CIDAR_API_PORT=9000 cidar-api
+
+# Custom CORS origins
+CIDAR_API_CORS_ORIGINS='["http://localhost:3000","https://myapp.com"]' cidar-api
+```
+
+### Available endpoints
+
+**Health & Status:**
+- `GET /api/v1/health` - Basic health check
+- `GET /api/v1/health/ready` - Readiness check (catalog loaded, service ready)
+
+**Identification:**
+- `POST /api/v1/identify` - Upload an image and identify cameras
+  - Parameters: `top_k` (default: 5), `min_similarity` (default: 0.3)
+  - Request: `multipart/form-data` with image file
+  - Response: Detection results with matched cameras
+
+**Catalog:**
+- `GET /api/v1/catalog/stats` - Get catalog statistics
+- `POST /api/v1/catalog/reload` - Reload catalog embeddings (admin)
+
+**Documentation:**
+- `GET /` - API information
+- `GET /docs` - Interactive Swagger UI documentation
+- `GET /redoc` - ReDoc documentation
+
+### Example API usage
+
+**Using curl:**
+```bash
+# Health check
+curl http://localhost:8000/api/v1/health
+
+# Identify cameras in an image
+curl -X POST "http://localhost:8000/api/v1/identify?top_k=5&min_similarity=0.3" \
+  -F "image=@path/to/photo.jpg"
+
+# Get catalog statistics
+curl http://localhost:8000/api/v1/catalog/stats
+```
+
+**Using Python requests:**
+```python
+import requests
+
+# Identify cameras
+with open("photo.jpg", "rb") as f:
+    response = requests.post(
+        "http://localhost:8000/api/v1/identify",
+        files={"image": f},
+        params={"top_k": 5, "min_similarity": 0.3}
+    )
+    results = response.json()
+    print(f"Found {results['detections_count']} cameras")
+```
+
+**Using JavaScript fetch:**
+```javascript
+const formData = new FormData();
+formData.append('image', fileInput.files[0]);
+
+const response = await fetch('http://localhost:8000/api/v1/identify?top_k=5', {
+  method: 'POST',
+  body: formData
+});
+
+const results = await response.json();
+console.log(`Found ${results.detections_count} cameras`);
+```
+
+### API configuration
+
+Configure the API server using environment variables with the `CIDAR_API_` prefix:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `CIDAR_API_HOST` | Host to bind to | `0.0.0.0` |
+| `CIDAR_API_PORT` | Port to listen on | `8000` |
+| `CIDAR_API_RELOAD` | Enable auto-reload (development) | `false` |
+| `CIDAR_API_WORKERS` | Number of worker processes | `1` |
+| `CIDAR_API_CORS_ORIGINS` | Allowed CORS origins (JSON array) | `["http://localhost:3000", "http://localhost:5173"]` |
+| `CIDAR_API_LOG_LEVEL` | Logging level | `INFO` |
+| `CIDAR_API_MAX_UPLOAD_SIZE_MB` | Maximum upload size in MB | `10` |
+
+### Interactive API documentation
+
+Once the API server is running, visit:
+- **Swagger UI**: http://localhost:8000/docs
+- **ReDoc**: http://localhost:8000/redoc
+
+These provide interactive documentation where you can test all endpoints directly from your browser.
+
 ## Building the documentation
 
 The project uses Sphinx to generate HTML documentation from docstrings and
