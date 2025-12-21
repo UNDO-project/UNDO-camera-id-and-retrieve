@@ -1,6 +1,6 @@
 [project]
 name = "cctv-identification-and-research"
-version = "0.3.0"
+version = "0.4.0"
 description = "A pipeline to scrape cctv data and identify given cameras in urban settings."
 readme = "README.md"
 requires-python = ">=3.12"
