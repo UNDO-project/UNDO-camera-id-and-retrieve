@@ -11,3 +11,13 @@ The implementation is organized into the following modules:
 - ``service``: High-level identification pipeline orchestration.
 - ``cli``: Command-line interface entry point.
 """
+
+from src.identification.detector import Detector
+from src.identification.index import CatalogIndex
+from src.identification.service import IdentificationService
+
+__all__ = [
+    "Detector",
+    "CatalogIndex",
+    "IdentificationService",
+]

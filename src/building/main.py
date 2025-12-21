@@ -3,8 +3,6 @@
 This is an independent stage that reads scraped data from the filesystem
 and creates the parquet dataset.
 
-Usage:
-    python build_dataset.py
 """
 
 import argparse
@@ -13,7 +11,7 @@ from pathlib import Path
 from loguru import logger
 
 from src.config import OUTPUT_DIR
-from src.pipeline.dataset_builder import DatasetBuilder
+from src.building.builder import DatasetBuilder
 from src.storage.versioning import DatasetVersionManager
 
 

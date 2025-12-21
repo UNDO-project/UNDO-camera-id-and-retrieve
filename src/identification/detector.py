@@ -9,7 +9,7 @@ from typing import List, Optional
 
 from ultralytics import YOLO
 
-from src.config import get_yolo_camera_weights_path
+from src.models.weights import get_yolo_camera_weights_path
 from src.models.identification import BoundingBox, CameraDetection
 
 

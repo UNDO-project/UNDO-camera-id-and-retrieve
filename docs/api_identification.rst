@@ -10,6 +10,7 @@ Models
    :members:
    :undoc-members:
    :show-inheritance:
+   :noindex:
 
 Detector
 --------

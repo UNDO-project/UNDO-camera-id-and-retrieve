@@ -1,4 +1,4 @@
-# CCTV Identification Research
+# CCTV Identification and Research | (cIDaR)
 
 A multi-stage pipeline for scraping CCTV camera product data from vendor sites,
 building a structured dataset, validating it, and identifying
@@ -14,7 +14,7 @@ to running camera identification on a single image.
 uv venv
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
-# 2. Install core dependencies
+# 2. Install core dependencies (includes console scripts)
 uv sync
 
 # 3. Install identification dependencies (YOLOv8 + CLIP)
@@ -27,22 +27,22 @@ cp .env-sample .env
 
 # 5. Scrape cameras (Stage 1)
 # Scrape Axis cameras (default)
-python scrape.py
+cidar-scrape
 
 # Or scrape HikVision cameras
-python scrape.py --vendor hikvision
+cidar-scrape --vendor hikvision
 
 # Or scrape all vendors
-python scrape.py --vendor all
+cidar-scrape --vendor all
 
 # 6. Build dataset (Stage 2)
-python build_dataset.py
+cidar-build
 
 # 7. Build catalog embeddings (Stage 4 prep)
 uv run python -c "from src.identification.index import build_catalog_embeddings; build_catalog_embeddings()"
 
 # 8. Run identification on an image (Stage 4)
-uv run python -m src.identification.cli \
+cidar-identify \
   --image path/to/photo.jpg \
   --top-k 5 \
   --min-similarity 0.3
@@ -53,7 +53,7 @@ uv run python -m src.identification.cli \
 The project is organized into sequential stages:
 
 1. **Stage 1 – Scrape**
-   - Entry points: `scrape.py`, `main.py`.
+   - Entry point: `cidar-scrape` (console script from `src/scraping/main.py`)
    - Scrapes CCTV camera products from supported vendors:
      - **Axis Communications**: Network cameras (categories, series, products)
      - **HikVision**: Network cameras, PTZ cameras, and Explosion-Proof series
@@ -62,7 +62,7 @@ The project is organized into sequential stages:
      what was scraped.
 
 2. **Stage 2 – Build dataset**
-   - Entry point: `build_dataset.py`.
+   - Entry point: `cidar-build` (console script from `src/building/main.py`)
    - Reads the manifest and filesystem (`data/images`, `data/pdfs`).
    - Builds a tabular dataset (`output/products.parquet`) of `CameraRecord` rows
      (see `src/models/camera.py`).
@@ -72,7 +72,7 @@ The project is organized into sequential stages:
      - **Merge strategies**: Handle duplicates with update/skip/error strategies
 
 3. **Stage 3 – Validate dataset**
-   - Entry point: `validate_dataset.py` (CLI in `src/validation/cli.py`).
+   - Entry point: `cidar-validate` (console script from `src/validation/cli.py`)
    - Performs multi-layer validation:
      - schema / structural checks,
      - file integrity (images / PDFs),
@@ -80,7 +80,8 @@ The project is organized into sequential stages:
      - comparison against the manifest.
 
 4. **Stage 4 – Camera Identification & Retrieval**
-   - New package: `src/identification/`.
+   - Entry point: `cidar-identify` (console script from `src/identification/cli.py`)
+   - Package: `src/identification/`
    - Goal: given an input image, detect cameras (YOLOv8), crop them, and retrieve
      the most likely catalog matches from `products.parquet`.
    - Current components:
@@ -150,17 +151,17 @@ created automatically at runtime.
 
 Scrape Axis Communications cameras (default):
 ```bash
-python scrape.py
+cidar-scrape
 ```
 
 Or scrape HikVision cameras:
 ```bash
-python scrape.py --vendor hikvision
+cidar-scrape --vendor hikvision
 ```
 
 Or scrape all vendors:
 ```bash
-python scrape.py --vendor all
+cidar-scrape --vendor all
 ```
 
 This will populate `data/images`, `data/pdfs`, and generate
@@ -175,7 +176,7 @@ This will populate `data/images`, `data/pdfs`, and generate
 
 **Basic usage:**
 ```bash
-python build_dataset.py
+cidar-build
 ```
 
 This reads the manifest and filesystem and produces `output/products.parquet`.
@@ -185,28 +186,28 @@ This reads the manifest and filesystem and produces `output/products.parquet`.
 **Append mode** - Merge new data with existing dataset:
 ```bash
 # Append with update strategy (overwrites duplicates)
-python build_dataset.py --append --merge-strategy update
+cidar-build --append --merge-strategy update
 
 # Append with skip strategy (keeps original data)
-python build_dataset.py --append --merge-strategy skip
+cidar-build --append --merge-strategy skip
 
 # Append with error strategy (fails on duplicates)
-python build_dataset.py --append --merge-strategy error
+cidar-build --append --merge-strategy error
 ```
 
 **Dataset versioning** - Track dataset evolution over time:
 ```bash
 # Build with auto-versioning (creates products_v1.parquet)
-python build_dataset.py --version-mode auto
+cidar-build --version-mode auto
 
 # Append and create new version
-python build_dataset.py --append --version-mode auto
+cidar-build --append --version-mode auto
 
 # List all dataset versions
-python build_dataset.py --list-versions
+cidar-build --list-versions
 
 # Clean up old versions (keep last 3)
-python build_dataset.py --cleanup-versions 3
+cidar-build --cleanup-versions 3
 ```
 
 **Version structure:**
@@ -228,7 +229,7 @@ output/
 **Basic usage:**
 ```bash
 # Validate current dataset (symlink)
-python validate_dataset.py
+cidar-validate
 ```
 
 This runs the validator CLI, which loads the parquet dataset and manifest,
@@ -237,10 +238,10 @@ performs checks, and prints a validation report.
 **Version-aware validation:**
 ```bash
 # Validate specific version
-python validate_dataset.py --version 2
+cidar-validate --version 2
 
 # Validate version with verbose output
-python validate_dataset.py --version 1 --verbose
+cidar-validate --version 1 --verbose
 ```
 
 Version-aware validation reports include:
@@ -260,18 +261,60 @@ Key entry points:
   - Builds `output/catalog_embeddings.npz` from `output/products.parquet`.
 - `IdentificationService` in `src/identification/service.py`:
   - Combines YOLOv8 detection, cropping, CLIP embeddings, and catalog search.
-- CLI in `src/identification/cli.py`:
-  - Run via `python -m src.identification.cli --image path/to/photo.jpg`.
+- CLI: `cidar-identify` (console script)
 
 Example CLI usage:
 
 ```bash
 # Build catalog embeddings once (after scraping and dataset build)
-python -m src.identification.index  # or call build_catalog_embeddings from a small script
+python -c "from src.identification.index import build_catalog_embeddings; build_catalog_embeddings()"
 
 # Run identification on a single image
-python -m src.identification.cli \
+cidar-identify \
   --image path/to/photo.jpg \
   --top-k 5 \
   --min-similarity 0.3
 ```
+
+## Building the documentation
+
+The project uses Sphinx to generate HTML documentation from docstrings and
+reStructuredText files.
+
+### Build documentation
+
+From the project root:
+
+```bash
+cd docs
+make html
+```
+
+The generated documentation will be in `docs/_build/html/index.html`. Open this
+file in your browser to view the docs.
+
+### Clean build
+
+To remove all build artifacts and rebuild from scratch:
+
+```bash
+cd docs
+make clean
+make html
+```
+
+This is useful when:
+- You've made structural changes to the documentation
+- You want to ensure there are no stale artifacts
+- You're troubleshooting build warnings or errors
+
+### Verify build quality
+
+To check for warnings or errors during the build:
+
+```bash
+cd docs
+make clean && make html 2>&1 | grep -i "warning\|error"
+```
+
+A successful build should produce no warnings or errors.

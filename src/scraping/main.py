@@ -5,8 +5,7 @@ import asyncio
 
 from loguru import logger
 
-from src.scrapers.axis import AxisCameraScraper
-from src.scrapers.hikvision import HikvisionCameraScraper
+from src.scrapers import AxisCameraScraper, HikvisionCameraScraper
 from src.storage.download_cache import DownloadCache
 from src.storage.manifest import ManifestRecorder
 

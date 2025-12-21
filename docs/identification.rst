@@ -1,5 +1,5 @@
 Camera Identification & Retrieval (Stage 4)
-==========================================
+============================================
 
 This section documents the camera identification pipeline built on top of
 the scraped catalog and embeddings.
@@ -11,6 +11,7 @@ Models
    :members:
    :undoc-members:
    :show-inheritance:
+   :noindex:
 
 Detector
 --------

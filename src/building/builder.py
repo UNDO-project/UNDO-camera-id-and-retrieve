@@ -6,7 +6,7 @@ from pathlib import Path
 import pandas as pd
 from loguru import logger
 
-from src.config import DATA_DIR, OUTPUT_DIR
+from src.config import OUTPUT_DIR, DATA_DIR
 from src.models.camera import CameraRecord
 from src.storage.versioning import DatasetVersionManager
 
