@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "beautifulsoup4>=4.14.2",
+    "fastapi>=0.126.0",
     "httpx>=0.28.1",
     "ipykernel>=7.1.0",
     "loguru>=0.7.3",
@@ -30,3 +31,4 @@ cidar-scrape = "src.scraping.main:main"
 cidar-build = "src.building.main:main"
 cidar-validate = "src.validation.cli:main"
 cidar-identify = "src.identification.cli:main"
+cidar-api = "src.api.main:run"
