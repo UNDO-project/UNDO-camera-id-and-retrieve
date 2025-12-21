@@ -275,3 +275,46 @@ cidar-identify \
   --top-k 5 \
   --min-similarity 0.3
 ```
+
+## Building the documentation
+
+The project uses Sphinx to generate HTML documentation from docstrings and
+reStructuredText files.
+
+### Build documentation
+
+From the project root:
+
+```bash
+cd docs
+make html
+```
+
+The generated documentation will be in `docs/_build/html/index.html`. Open this
+file in your browser to view the docs.
+
+### Clean build
+
+To remove all build artifacts and rebuild from scratch:
+
+```bash
+cd docs
+make clean
+make html
+```
+
+This is useful when:
+- You've made structural changes to the documentation
+- You want to ensure there are no stale artifacts
+- You're troubleshooting build warnings or errors
+
+### Verify build quality
+
+To check for warnings or errors during the build:
+
+```bash
+cd docs
+make clean && make html 2>&1 | grep -i "warning\|error"
+```
+
+A successful build should produce no warnings or errors.
