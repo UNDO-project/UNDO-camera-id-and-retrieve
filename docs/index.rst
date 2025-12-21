@@ -1,10 +1,10 @@
-.. Security infrastructure identification system documentation master file, created by
+.. CCTV Identification and Research (cIDaR) documentation master file, created by
    sphinx-quickstart on Wed Nov 19 15:03:43 2025.
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-Security infrastructure identification system documentation
-===========================================================
+CCTV Identification and Research (cIDaR)
+=========================================
 
 .. raw:: html
 

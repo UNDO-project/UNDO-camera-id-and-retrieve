@@ -40,7 +40,7 @@ Stage 1 – Scrape
 Stage 2 – Build dataset
 -----------------------
 
-.. automodule:: src.pipeline.dataset_builder
+.. automodule:: src.building.builder
    :members: DatasetBuilder
    :undoc-members:
    :show-inheritance:
