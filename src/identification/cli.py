@@ -18,7 +18,7 @@ def main() -> None:
 
     Example usage::
 
-        python -m src.identification.cli --image path/to/photo.jpg
+        cidar-identify --image path/to/photo.jpg
     """
     parser = argparse.ArgumentParser(
         description="Camera Identification & Retrieval CLI",
