@@ -3,7 +3,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from src.config import YOLO_CAMERA_WEIGHTS_ENV_VAR, YOLO_CAMERA_WEIGHTS_DEFAULT
+from src.config import YOLO_CAMERA_WEIGHTS_ENV_VAR, paths
 
 
 def get_yolo_camera_weights_path() -> Path:
@@ -24,4 +24,4 @@ def get_yolo_camera_weights_path() -> Path:
     if env_path:
         return Path(env_path)
 
-    return YOLO_CAMERA_WEIGHTS_DEFAULT
+    return paths.yolo_camera_weights_default
