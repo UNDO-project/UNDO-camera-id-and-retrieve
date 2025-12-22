@@ -6,7 +6,7 @@ from pathlib import Path
 import pandas as pd
 from loguru import logger
 
-from src.config import OUTPUT_DIR, DATA_DIR
+from src.config import paths
 from src.models.camera import CameraRecord
 from src.storage.versioning import DatasetVersionManager
 
@@ -49,12 +49,12 @@ class DatasetBuilder:
         :param version_number: Manual version number (requires version_mode=manual)
         """
         if manifest_path is None:
-            manifest_path = OUTPUT_DIR / "verification_manifest.json"
+            manifest_path = paths.output_dir / "verification_manifest.json"
         else:
             manifest_path = Path(manifest_path)
 
         if output_path is None:
-            output_path = OUTPUT_DIR / "products.parquet"
+            output_path = paths.output_dir / "products.parquet"
         else:
             output_path = Path(output_path)
 
@@ -187,7 +187,7 @@ class DatasetBuilder:
         category_dir = category_name.upper().replace(" ", "_")
         series_dir = series_name.replace(" ", "_")
 
-        product_dir = DATA_DIR / "images" / category_dir / series_dir / camera_id
+        product_dir = paths.data_dir / "images" / category_dir / series_dir / camera_id
 
         if not product_dir.exists():
             return []
@@ -199,8 +199,9 @@ class DatasetBuilder:
 
         return image_files
 
+    @staticmethod
     def _find_pdf_file(
-        self, category_name: str, series_name: str, camera_id: str
+        category_name: str, series_name: str, camera_id: str
     ) -> str | None:
         r"""
         Find PDF file for a product in filesystem.
@@ -213,7 +214,9 @@ class DatasetBuilder:
         category_dir = category_name.upper().replace(" ", "_")
         series_dir = series_name.replace(" ", "_")
 
-        pdf_file = DATA_DIR / "pdfs" / category_dir / series_dir / f"{camera_id}.pdf"
+        pdf_file = (
+            paths.data_dir / "pdfs" / category_dir / series_dir / f"{camera_id}.pdf"
+        )
 
         if pdf_file.exists():
             relative_path = pdf_file.relative_to(Path.cwd())
@@ -221,8 +224,9 @@ class DatasetBuilder:
 
         return None
 
+    @staticmethod
     def _load_specifications_from_manifest(
-        self, product_info: dict
+        product_info: dict,
     ) -> dict[str, dict[str, str]]:
         r"""
         Load specifications from product info in manifest.

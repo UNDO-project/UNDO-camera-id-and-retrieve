@@ -10,7 +10,7 @@ from pathlib import Path
 
 from loguru import logger
 
-from src.config import OUTPUT_DIR
+from src.config import paths
 from src.building.builder import DatasetBuilder
 from src.storage.versioning import DatasetVersionManager
 
@@ -120,11 +120,11 @@ Examples:
     # Resolve paths
     manifest_path = Path(args.manifest)
     if not manifest_path.is_absolute():
-        manifest_path = OUTPUT_DIR.parent / manifest_path
+        manifest_path = paths.output_dir.parent / manifest_path
 
     output_path = Path(args.output)
     if not output_path.is_absolute():
-        output_path = OUTPUT_DIR.parent / output_path
+        output_path = paths.output_dir.parent / output_path
 
     # Handle special commands
     version_manager = DatasetVersionManager(output_path.parent)
