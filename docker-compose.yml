@@ -1,0 +1,79 @@
+version: '3.8'
+
+services:
+  cidar-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      # Enable BuildKit for better caching and performance
+      args:
+        BUILDKIT_INLINE_CACHE: 1
+    image: cidar-api:latest
+    container_name: cidar-api
+
+    # Map container port 8000 to host port 8000
+    ports:
+      - "8000:8000"
+
+    # Volume mounts for data persistence and hot-reload
+    volumes:
+      # Model weights (read-only) - YOLO weights must exist before starting
+      - ./model_weights:/app/model_weights:ro
+
+      # Output directory (read-write) - for parquet, embeddings, query_patches
+      - ./output:/app/output:rw
+
+      # Data directory (read-only) - scraped images/PDFs
+      - ./data:/app/data:ro
+
+      # Source code (for development hot-reload - comment out for production)
+      # - ./src:/app/src:ro
+
+    # Environment variables for API configuration
+    environment:
+      # API Server Settings
+      - CIDAR_API_HOST=0.0.0.0
+      - CIDAR_API_PORT=8000
+      - CIDAR_API_RELOAD=false  # Set to true for development (requires src volume mount)
+      - CIDAR_API_LOG_LEVEL=INFO
+
+      # CORS Settings (adjust for your frontend)
+      - CIDAR_API_CORS_ORIGINS=["http://localhost:3000", "http://localhost:5173", "http://localhost:8080"]
+
+      # Path Settings (already set in Dockerfile, but can override)
+      - CIDAR_PATH_PROJECT_ROOT=/app
+
+      # Rate Limiting
+      - CIDAR_API_RATE_LIMIT_PER_MINUTE=60
+
+      # File Upload Settings
+      - CIDAR_API_MAX_UPLOAD_SIZE_MB=10
+
+    # Resource limits (adjust based on your system)
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 4G
+        reservations:
+          cpus: '2'
+          memory: 2G
+
+    # Restart policy
+    restart: unless-stopped
+
+    # Health check (defined in Dockerfile, but can override here)
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import httpx; httpx.get(\"http://localhost:8000/api/v1/health\", timeout=5.0).raise_for_status()' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
+
+    # Network configuration
+    networks:
+      - cidar-network
+
+networks:
+  cidar-network:
+    driver: bridge
