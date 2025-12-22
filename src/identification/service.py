@@ -11,7 +11,7 @@ from typing import List, Optional
 from loguru import logger
 from PIL import Image
 
-from src.config import OUTPUT_DIR
+from src.config import paths
 from src.identification.catalog import load_catalog
 from src.identification.detector import Detector
 from src.identification.embeddings import embed_image
@@ -80,7 +80,7 @@ class IdentificationService:
         self.save_crops = save_crops
 
         if crop_dir is None:
-            crop_dir = OUTPUT_DIR / "query_patches"
+            crop_dir = paths.output_dir / "query_patches"
         self.crop_dir = Path(crop_dir)
         if self.save_crops:
             self.crop_dir.mkdir(parents=True, exist_ok=True)

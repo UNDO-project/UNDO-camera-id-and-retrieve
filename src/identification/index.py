@@ -12,7 +12,7 @@ from typing import List
 import numpy as np
 from loguru import logger
 
-from src.config import OUTPUT_DIR
+from src.config import paths
 from src.identification.catalog import iter_reference_image_files, load_catalog
 from src.identification.embeddings import embed_image
 from src.models.identification import CameraMatch
@@ -45,7 +45,7 @@ def build_catalog_embeddings(
     :raises RuntimeError: If no embeddings could be produced
     """
     if embeddings_path is None:
-        embeddings_path = OUTPUT_DIR / "catalog_embeddings.npz"
+        embeddings_path = paths.output_dir / "catalog_embeddings.npz"
     else:
         embeddings_path = Path(embeddings_path)
 
@@ -124,7 +124,7 @@ class CatalogIndex:
         :raises FileNotFoundError: If the embeddings file does not exist
         """
         if embeddings_path is None:
-            embeddings_path = OUTPUT_DIR / "catalog_embeddings.npz"
+            embeddings_path = paths.output_dir / "catalog_embeddings.npz"
         self.embeddings_path = Path(embeddings_path)
 
         if not self.embeddings_path.exists():

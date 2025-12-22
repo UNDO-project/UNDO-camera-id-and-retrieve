@@ -12,7 +12,7 @@ from typing import Any, Dict, Iterable, Tuple
 import pandas as pd
 from loguru import logger
 
-from src.config import OUTPUT_DIR, PROJECT_ROOT
+from src.config import paths
 from src.models.camera import CameraRecord
 
 
@@ -33,7 +33,7 @@ def load_catalog(parquet_path: Path | str | None = None) -> Dict[str, CameraReco
     :raises FileNotFoundError: If the parquet file does not exist
     """
     if parquet_path is None:
-        parquet_path = OUTPUT_DIR / "products.parquet"
+        parquet_path = paths.output_dir / "products.parquet"
     else:
         parquet_path = Path(parquet_path)
 
@@ -65,25 +65,19 @@ def load_catalog(parquet_path: Path | str | None = None) -> Dict[str, CameraReco
 
 def iter_reference_image_files(
     catalog: Dict[str, CameraRecord],
-    project_root: Path | str | None = None,
     max_images_per_camera: int = 1,
 ) -> Iterable[Tuple[str, Path]]:
     r"""Iterate over reference image files for catalog cameras.
 
     For each :class:`CameraRecord` in the catalog, yields up to
     ``max_images_per_camera`` image paths derived from the ``image_files``
-    field. Relative paths are resolved against ``project_root`` (or the
-    current project root if not provided).
+    field. Relative paths are resolved against the project root.
 
     :param catalog: Mapping from camera ID to :class:`CameraRecord`
-    :param project_root: Base directory for resolving relative paths
     :param max_images_per_camera: Maximum number of images per camera to yield
     :return: Iterable of ``(camera_id, image_path)`` tuples
     """
-    if project_root is None:
-        base = PROJECT_ROOT
-    else:
-        base = Path(project_root)
+    base = paths.project_root
 
     for camera_id, record in catalog.items():
         if not record.image_files:
