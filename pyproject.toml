@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "beautifulsoup4>=4.14.2",
+    "fastapi>=0.126.0",
     "httpx>=0.28.1",
     "ipykernel>=7.1.0",
     "loguru>=0.7.3",
@@ -16,13 +17,16 @@ dependencies = [
     "pre-commit>=4.3.0",
     "pyarrow>=22.0.0",
     "pydantic>=2.12.3",
+    "pydantic-settings>=2.12.0",
     "pytest>=9.0.0",
     "python-dotenv>=1.2.1",
+    "python-multipart>=0.0.21",
     "ruff>=0.14.10",
     "sphinx>=8.2.3",
     "sphinx-rtd-theme>=3.0.2",
     "torch>=2.9.1",
     "ultralytics>=8.3.228",
+    "uvicorn>=0.40.0",
 ]
 
 [project.scripts]
@@ -30,3 +34,14 @@ cidar-scrape = "src.scraping.main:main"
 cidar-build = "src.building.main:main"
 cidar-validate = "src.validation.cli:main"
 cidar-identify = "src.identification.cli:main"
+cidar-api = "src.api.main:run"
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["src"]
+
+[tool.uv]
+package = true
