@@ -14,7 +14,7 @@ from src.api.exceptions import generic_exception_handler
 app = FastAPI(
     title="cIDaR - Camera Identification and Research API",
     description="API for identifying CCTV cameras in images using YOLOv8 and CLIP",
-    version="0.4.0",
+    version="0.5.0",
     docs_url="/docs",
     redoc_url="/redoc",
 )
