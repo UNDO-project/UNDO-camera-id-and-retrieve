@@ -1,0 +1,62 @@
+# Python cache and build artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+.eggs/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments (we build fresh in Docker)
+.venv/
+venv/
+env/
+ENV/
+
+# Development and testing
+.git/
+.github/
+.gitignore
+.pre-commit-config.yaml
+tests/
+notebooks/
+docs/
+*.md
+!README.md
+.coverage
+htmlcov/
+.tox/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Environment files (we use docker-compose.yml for config)
+.env
+.env.*
+
+# Output directories (mounted as volumes)
+output/
+data/
+model_weights/
+logs/
+
+# Project-specific
+tester.py
+*.db
+test_html/
+CLAUDE.md
+PYDANTIC_SETTINGS_MIGRATION.md
+
+# Docker files themselves
+Dockerfile*
+docker-compose*.yml
+.dockerignore
