@@ -7,7 +7,7 @@ from typing import Any
 import pandas as pd
 from loguru import logger
 
-from src.config import IMAGES_DIR, OUTPUT_DIR, PDFS_DIR
+from src.config import paths
 from src.models.camera import CameraRecord
 from src.storage.download_cache import DownloadCache
 
@@ -32,7 +32,7 @@ class DatasetManager:
         :param dataset_path: Path where parquet file will be saved
         """
         if dataset_path is None:
-            dataset_path = OUTPUT_DIR / "products.parquet"
+            dataset_path = paths.output_dir / "products.parquet"
         else:
             dataset_path = Path(dataset_path)
 
@@ -72,7 +72,7 @@ class DatasetManager:
         series_dir = record.product_series.replace(" ", "_")
 
         product_dir = (
-            IMAGES_DIR / vendor_dir / category_dir / series_dir / record.camera_id
+            paths.images_dir / vendor_dir / category_dir / series_dir / record.camera_id
         )
         product_dir.mkdir(parents=True, exist_ok=True)
 
@@ -125,7 +125,7 @@ class DatasetManager:
         category_dir = record.product_category.upper().replace(" ", "_")
         series_dir = record.product_series.replace(" ", "_")
 
-        pdf_parent_dir = PDFS_DIR / vendor_dir / category_dir / series_dir
+        pdf_parent_dir = paths.pdfs_dir / vendor_dir / category_dir / series_dir
         pdf_parent_dir.mkdir(parents=True, exist_ok=True)
 
         file_path = pdf_parent_dir / f"{record.camera_id}.pdf"
