@@ -3,7 +3,7 @@
 from bs4 import BeautifulSoup
 from loguru import logger
 
-from src.config import AXIS_BASE_URL, AXIS_PRODUCTS_URL
+from src.config import axis
 from src.models.camera import CategoryLink, CameraRecord
 from src.scrapers.base import CameraScraperBase
 from src.scrapers.managers import DownloadManager, RelativeURLNormalizer
@@ -24,7 +24,7 @@ class AxisCameraScraper(CameraScraperBase):
 
         :param download_cache: Optional DownloadCache for skipping downloaded content
         """
-        super().__init__(AXIS_BASE_URL)
+        super().__init__(axis.base_url)
         self.download_cache = download_cache
 
         # Composition: Inject download manager with strategy
@@ -40,7 +40,7 @@ class AxisCameraScraper(CameraScraperBase):
         :return: List of category links
         """
         logger.info("Fetching Axis product categories")
-        html = await self.fetch_html(AXIS_PRODUCTS_URL)
+        html = await self.fetch_html(axis.products_url)
         soup = BeautifulSoup(html, "html.parser")
 
         categories = []
@@ -79,7 +79,7 @@ class AxisCameraScraper(CameraScraperBase):
         :param category: Category to scrape
         :return: List of product series links
         """
-        category_url = f"{AXIS_BASE_URL}{category.href}"
+        category_url = f"{axis.base_url}{category.href}"
         html = await self.fetch_html(category_url)
         soup = BeautifulSoup(html, "html.parser")
 
@@ -126,7 +126,7 @@ class AxisCameraScraper(CameraScraperBase):
         :param series: Product series link to scrape
         :return: List of product URLs
         """
-        series_url = f"{AXIS_BASE_URL}{series.href}"
+        series_url = f"{axis.base_url}{series.href}"
         html = await self.fetch_html(series_url)
         soup = BeautifulSoup(html, "html.parser")
 
@@ -170,7 +170,7 @@ class AxisCameraScraper(CameraScraperBase):
         :param series_name: Product series name (e.g., "AXIS M30 Dome Camera Series")
         :return: CameraRecord with detailed product information
         """
-        product_page_url = f"{AXIS_BASE_URL}{product_url}"
+        product_page_url = f"{axis.base_url}{product_url}"
 
         # Check cache first
         if self.download_cache and self.download_cache.has_cached_product(
