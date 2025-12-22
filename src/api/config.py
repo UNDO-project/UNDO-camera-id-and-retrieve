@@ -2,11 +2,16 @@
 
 from typing import List
 
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class APISettings(BaseSettings):
     """API configuration settings loaded from environment variables."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="CIDAR_API_",
+        case_sensitive=False,
+    )
 
     # API Server Settings
     host: str = "0.0.0.0"
@@ -26,13 +31,6 @@ class APISettings(BaseSettings):
 
     # Logging
     log_level: str = "INFO"
-
-    class ConfigDict:
-        """Pydantic config."""
-
-        env_prefix = "CIDAR_API_"
-        env_file = ".env"
-        case_sensitive = False
 
 
 settings = APISettings()

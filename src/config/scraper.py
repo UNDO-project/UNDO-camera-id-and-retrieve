@@ -1,9 +1,14 @@
 from typing import Dict
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class ScraperSettings(BaseSettings):
     """Configuration for web scraping behavior."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="CIDAR_SCRAPER_",
+        case_sensitive=False,
+    )
 
     min_request_delay: float = 2.0
     max_request_delay: float = 5.0
@@ -32,8 +37,3 @@ class ScraperSettings(BaseSettings):
             "Sec-Fetch-Site": "none",
             "Cache-Control": "max-age=0",
         }
-
-    class ConfigDict:
-        env_prefix = "CIDAR_SCRAPER_"
-        env_file = ".env"
-        case_sensitive = False

@@ -1,9 +1,14 @@
 from pydantic import computed_field
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class AxisSettings(BaseSettings):
     """Configuration for Axis Communications scraping."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="CIDAR_AXIS_",
+        case_sensitive=False,
+    )
 
     base_url: str = "https://www.axis.com"
 
@@ -13,14 +18,14 @@ class AxisSettings(BaseSettings):
         """Full products URL."""
         return f"{self.base_url}/products/network-cameras"
 
-    class ConfigDict:
-        env_prefix = "CIDAR_AXIS_"
-        env_file = ".env"
-        case_sensitive = False
-
 
 class HikVisionSettings(BaseSettings):
     """Configuration for HikVision scraping."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="CIDAR_HIKVISION_",
+        case_sensitive=False,
+    )
 
     base_url: str = "https://www.hikvision.com"
     region: str = "europe"
@@ -44,8 +49,3 @@ class HikVisionSettings(BaseSettings):
     def thermal_products_url(self) -> str:
         """Thermal products URL."""
         return f"{self.base_url}/{self.region}/products/Thermal-Products"
-
-    class ConfigDict:
-        env_prefix = "CIDAR_HIKVISION_"
-        env_file = ".env"
-        case_sensitive = False

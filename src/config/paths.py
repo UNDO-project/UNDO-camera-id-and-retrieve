@@ -1,10 +1,16 @@
 from pathlib import Path
+from typing import Optional
 from pydantic import field_validator, computed_field
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class PathSettings(BaseSettings):
     """Configuration for file system paths."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="CIDAR_PATH_",
+        case_sensitive=False,
+    )
 
     project_root: Path = Path(__file__).parent.parent.parent
     data_dir_name: str = "data"
@@ -13,6 +19,7 @@ class PathSettings(BaseSettings):
     output_dir_name: str = "output"
     models_dir_name: str = "model_weights"
     yolo_weights_filename: str = "yolov8_camera.pt"
+    yolo_camera_weights: Optional[Path] = None
 
     @computed_field
     @property
@@ -58,6 +65,24 @@ class PathSettings(BaseSettings):
             v = Path(v)
         return v.resolve()
 
+    @field_validator("yolo_camera_weights", mode="before")
+    @classmethod
+    def resolve_yolo_weights(cls, v, info):
+        """Resolve YOLO camera weights path, using default if not provided."""
+        if v is None:
+            # Compute default path
+            project_root = info.data.get(
+                "project_root", Path(__file__).parent.parent.parent
+            )
+            models_dir_name = info.data.get("models_dir_name", "model_weights")
+            yolo_weights_filename = info.data.get(
+                "yolo_weights_filename", "yolov8_camera.pt"
+            )
+            return project_root / models_dir_name / yolo_weights_filename
+        if isinstance(v, str):
+            return Path(v)
+        return v
+
     def ensure_directories_exist(self) -> None:
         """Create directories if they don't exist."""
         self.data_dir.mkdir(exist_ok=True)
@@ -65,8 +90,3 @@ class PathSettings(BaseSettings):
         self.pdfs_dir.mkdir(exist_ok=True)
         self.output_dir.mkdir(exist_ok=True)
         self.models_dir.mkdir(exist_ok=True)
-
-    class ConfigDict:
-        env_prefix = "CIDAR_PATH_"
-        env_file = ".env"
-        case_sensitive = False

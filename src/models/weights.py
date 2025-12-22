@@ -1,27 +1,16 @@
-import os
 from pathlib import Path
 
-from dotenv import load_dotenv
-
-from src.config import YOLO_CAMERA_WEIGHTS_ENV_VAR, paths
+from src.config import paths
 
 
 def get_yolo_camera_weights_path() -> Path:
     r"""
     Resolve the path to the YOLOv8 camera detector weights.
 
-    Resolution order:
-
-    1. Environment variable named by :data:`YOLO_CAMERA_WEIGHTS_ENV_VAR` if set
-       (typically ``CAMERA_DETECTOR_WEIGHTS`` loaded via ``python-dotenv``).
-    2. Default project-relative path under :data:`MODELS_DIR`.
+    The path is configured via the PathSettings object, which can be
+    overridden using the ``CIDAR_PATH_YOLO_CAMERA_WEIGHTS`` environment
+    variable in ``.env``.
 
     :return: Path to the YOLOv8 weights file
     """
-    # Load environment variables from .env if present
-    load_dotenv()
-    env_path = os.getenv(YOLO_CAMERA_WEIGHTS_ENV_VAR)
-    if env_path:
-        return Path(env_path)
-
-    return paths.yolo_camera_weights_default
+    return paths.yolo_camera_weights

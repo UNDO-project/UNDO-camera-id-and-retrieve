@@ -4,9 +4,6 @@ These values should NOT be configurable via environment variables
 as they are tightly coupled to website structure.
 """
 
-# Environment variable name for YOLO weights path override
-YOLO_CAMERA_WEIGHTS_ENV_VAR = "CAMERA_DETECTOR_WEIGHTS"
-
 # CSS Selectors for Playwright (HikVision)
 HIKVISION_SELECTORS = {
     "search_list": ".search-list",

@@ -12,14 +12,18 @@ Example:
     url = axis.products_url
 """
 
+from dotenv import load_dotenv
+
 from src.config.scraper import ScraperSettings
 from src.config.paths import PathSettings
 from src.config.vendors import AxisSettings, HikVisionSettings
 from src.config.constants import (
-    YOLO_CAMERA_WEIGHTS_ENV_VAR,
     HIKVISION_SELECTORS,
     HIKVISION_IP_SUBCATEGORIES,
 )
+
+# Load environment variables from .env file once
+load_dotenv()
 
 # Instantiate settings (singleton pattern)
 scraper = ScraperSettings()
@@ -37,7 +41,6 @@ __all__ = [
     "axis",
     "hikvision",
     # Static constants
-    "YOLO_CAMERA_WEIGHTS_ENV_VAR",
     "HIKVISION_SELECTORS",
     "HIKVISION_IP_SUBCATEGORIES",
 ]
