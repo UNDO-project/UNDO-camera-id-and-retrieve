@@ -389,6 +389,198 @@ Once the API server is running, visit:
 
 These provide interactive documentation where you can test all endpoints directly from your browser.
 
+## Docker Deployment
+
+The API can be deployed using Docker for simplified setup and consistent environments across development and production.
+
+### Prerequisites
+
+Before building the Docker image, ensure these files exist:
+
+```bash
+# Required files for the API to function
+ls -lh model_weights/yolov8_camera.pt    # YOLO detector weights
+ls -lh output/products.parquet            # Camera catalog dataset
+ls -lh output/catalog_embeddings.npz      # Precomputed CLIP embeddings
+```
+
+If any are missing, run the pipeline stages first:
+
+```bash
+# Scrape and build dataset
+cidar-scrape && cidar-build
+
+# Build catalog embeddings
+python -c "from src.identification.index import build_catalog_embeddings; build_catalog_embeddings()"
+```
+
+### Quick Start with Docker Compose
+
+The simplest way to run the API in Docker:
+
+```bash
+# Build the Docker image (~5-10 minutes first time)
+docker build -t cidar-api:latest .
+
+# Start the container
+docker-compose up -d
+
+# Watch logs (CLIP model downloads on first startup, ~60 seconds)
+docker-compose logs -f cidar-api
+
+# Test the API
+curl http://localhost:8000/api/v1/health
+
+# Access interactive docs
+open http://localhost:8000/docs
+```
+
+### Docker Image Details
+
+**Architecture:**
+- Multi-stage build using Python 3.12-slim base image
+- Uses `uv` package manager for fast, reproducible builds
+- Non-root user (UID 1000) for security
+- CPU-only PyTorch (no GPU dependencies)
+
+**Image size:**
+- Base image: ~2.1 GB (includes PyTorch and dependencies)
+- CLIP models: +350 MB (downloaded at first startup, cached thereafter)
+
+**Startup behavior:**
+- **First startup**: ~60 seconds (CLIP model downloads from HuggingFace)
+- **Subsequent startups**: ~5 seconds (models load from cache)
+
+### Volume Mounts
+
+The docker-compose.yml configures three volume mounts:
+
+```yaml
+volumes:
+  - ./model_weights:/app/model_weights:ro    # YOLO weights (read-only)
+  - ./output:/app/output:rw                  # Catalog + saved crops (read-write)
+  - ./data:/app/data:ro                      # Reference images (read-only)
+```
+
+### Configuration
+
+Configure the containerized API using environment variables in `docker-compose.yml`:
+
+```yaml
+environment:
+  - CIDAR_API_HOST=0.0.0.0
+  - CIDAR_API_PORT=8000
+  - CIDAR_API_LOG_LEVEL=INFO
+  - CIDAR_API_CORS_ORIGINS=["http://localhost:3000", "http://localhost:5173"]
+  - CIDAR_API_MAX_UPLOAD_SIZE_MB=10
+```
+
+Or create a `.env` file in the project root (docker-compose automatically loads it).
+
+### Resource Limits
+
+The default docker-compose.yml sets resource limits:
+
+```yaml
+deploy:
+  resources:
+    limits:
+      cpus: '4'
+      memory: 4G
+    reservations:
+      cpus: '2'
+      memory: 2G
+```
+
+Adjust these based on your system's capabilities and expected load.
+
+### Health Checks
+
+The container includes automatic health monitoring:
+
+```bash
+# Check container health status
+docker-compose ps
+
+# Container is healthy when this returns {"status":"healthy"}
+curl http://localhost:8000/api/v1/health
+
+# Check detailed readiness status
+curl http://localhost:8000/api/v1/health/ready
+```
+
+### Common Docker Commands
+
+```bash
+# Start container in foreground (see logs)
+docker-compose up
+
+# Start container in background
+docker-compose up -d
+
+# View logs
+docker-compose logs -f cidar-api
+
+# Stop container
+docker-compose down
+
+# Rebuild image after code changes
+docker-compose build
+
+# Restart container
+docker-compose restart cidar-api
+
+# Execute commands inside container
+docker-compose exec cidar-api bash
+
+# Check resource usage
+docker stats cidar-api
+```
+
+### Development Mode
+
+For development with hot-reload, uncomment the source volume mount in `docker-compose.yml`:
+
+```yaml
+volumes:
+  - ./src:/app/src:ro  # Uncomment this line
+
+environment:
+  - CIDAR_API_RELOAD=true  # Enable auto-reload
+```
+
+Then rebuild and restart:
+
+```bash
+docker-compose up --build
+```
+
+### Production Deployment
+
+For production deployments:
+
+1. **Use a specific version tag** instead of `latest`:
+   ```bash
+   docker build -t cidar-api:v1.0.0 .
+   ```
+
+2. **Disable development features** in docker-compose.yml:
+   ```yaml
+   environment:
+     - CIDAR_API_RELOAD=false
+     - CIDAR_API_LOG_LEVEL=INFO
+   ```
+
+3. **Set appropriate resource limits** based on expected load
+
+4. **Configure CORS** for your production domains:
+   ```yaml
+   environment:
+     - CIDAR_API_CORS_ORIGINS=["https://yourdomain.com"]
+   ```
+
+5. **Consider using Docker secrets** for sensitive configuration
+
 ## Building the documentation
 
 The project uses Sphinx to generate HTML documentation from docstrings and
