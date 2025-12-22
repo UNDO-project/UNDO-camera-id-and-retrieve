@@ -22,4 +22,5 @@ CCTV Identification and Research (cIDaR)
    pipeline
    identification
    api
+   configuration
 
