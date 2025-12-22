@@ -5,7 +5,7 @@ from pathlib import Path
 
 from loguru import logger
 
-from src.config import OUTPUT_DIR
+from src.config import paths
 from src.storage.versioning import DatasetVersionManager
 from src.validation.validator import DatasetValidator
 
@@ -102,11 +102,11 @@ Examples:
     # Resolve paths
     parquet_path = Path(args.parquet)
     if not parquet_path.is_absolute():
-        parquet_path = OUTPUT_DIR.parent / parquet_path
+        parquet_path = paths.output_dir.parent / parquet_path
 
     manifest_path = Path(args.manifest)
     if not manifest_path.is_absolute():
-        manifest_path = OUTPUT_DIR.parent / manifest_path
+        manifest_path = paths.output_dir.parent / manifest_path
 
     project_root = None
     if args.project_root:
