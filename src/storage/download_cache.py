@@ -11,7 +11,7 @@ from pathlib import Path
 
 from loguru import logger
 
-from src.config import OUTPUT_DIR
+from src.config import paths
 
 
 class DownloadCache:
@@ -32,7 +32,7 @@ class DownloadCache:
         :param cache_path: Path to SQLite database file
         """
         if cache_path is None:
-            cache_path = OUTPUT_DIR / "download_cache.db"
+            cache_path = paths.output_dir / "download_cache.db"
         else:
             cache_path = Path(cache_path)
 

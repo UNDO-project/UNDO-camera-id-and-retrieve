@@ -8,7 +8,7 @@ from loguru import logger
 from src.api.dependencies import get_identification_service, state
 from src.api.models.responses import CatalogStatsResponse
 from src.identification.service import IdentificationService
-from src.config import OUTPUT_DIR
+from src.config import paths
 
 router = APIRouter()
 
@@ -67,7 +67,7 @@ async def get_catalog_stats(
             total_cameras = len(catalog_index.catalog)
 
         # Get catalog path
-        catalog_path = str(OUTPUT_DIR / "products.parquet")
+        catalog_path = str(paths.output_dir / "products.parquet")
 
         return CatalogStatsResponse(
             total_cameras=total_cameras,

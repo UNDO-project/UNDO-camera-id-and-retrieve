@@ -50,3 +50,8 @@ echo "Running identification service tests"
 pytest tests/test_identification_service.py
 echo "Done..."
 echo "==============================================="
+
+echo "Running configuration tests"
+pytest tests/test_config.py
+echo "Done..."
+echo "==============================================="

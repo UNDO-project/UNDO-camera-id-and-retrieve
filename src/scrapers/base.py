@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 
 import httpx
 
-from src.config import DEFAULT_HEADERS
+from src.config import scraper
 from src.utils.timing import get_random_delay
 from src.models.camera import CategoryLink, CameraRecord
 
@@ -28,7 +28,7 @@ class CameraScraperBase(ABC):
         :param base_url: Base URL for the target website
         """
         self.base_url = base_url
-        self.client = httpx.AsyncClient(headers=DEFAULT_HEADERS, timeout=30.0)
+        self.client = httpx.AsyncClient(headers=scraper.default_headers, timeout=30.0)
 
     async def close(self) -> None:
         """Close the HTTP client connection."""

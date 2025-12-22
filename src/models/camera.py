@@ -2,7 +2,7 @@
 
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class CategoryLink(BaseModel):
@@ -68,7 +68,4 @@ class CameraRecord(BaseModel):
     product_category: str = Field(..., description="Top-level product category")
     product_series: str = Field(..., description="Product series name")
 
-    class ConfigDict:
-        """Pydantic config."""
-
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)

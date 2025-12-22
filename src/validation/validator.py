@@ -7,7 +7,7 @@ from typing import Any
 import pandas as pd
 from loguru import logger
 
-from src.config import OUTPUT_DIR
+from src.config import paths
 from src.storage.manifest import ManifestRecorder
 
 
@@ -46,12 +46,12 @@ class DatasetValidator:
         :param version_info: Version metadata dict (optional)
         """
         if parquet_path is None:
-            parquet_path = OUTPUT_DIR / "products.parquet"
+            parquet_path = paths.output_dir / "products.parquet"
         else:
             parquet_path = Path(parquet_path)
 
         if manifest_path is None:
-            manifest_path = OUTPUT_DIR / "verification_manifest.json"
+            manifest_path = paths.output_dir / "verification_manifest.json"
         else:
             manifest_path = Path(manifest_path)
 

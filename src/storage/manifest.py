@@ -7,7 +7,7 @@ from typing import Any
 
 from loguru import logger
 
-from src.config import OUTPUT_DIR
+from src.config import paths
 from src.models.camera import CameraRecord
 
 
@@ -29,7 +29,7 @@ class ManifestRecorder:
         :param manifest_path: Path where manifest JSON will be saved
         """
         if manifest_path is None:
-            manifest_path = OUTPUT_DIR / "verification_manifest.json"
+            manifest_path = paths.output_dir / "verification_manifest.json"
         else:
             manifest_path = Path(manifest_path)
 

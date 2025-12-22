@@ -1,6 +1,6 @@
 import random
 
-from src.config import MIN_REQUEST_DELAY, MAX_REQUEST_DELAY
+from src.config import scraper
 
 
 def get_random_delay() -> float:
@@ -9,4 +9,4 @@ def get_random_delay() -> float:
 
     :return: Random delay in seconds
     """
-    return random.uniform(MIN_REQUEST_DELAY, MAX_REQUEST_DELAY)
+    return random.uniform(scraper.min_request_delay, scraper.max_request_delay)

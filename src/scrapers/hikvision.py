@@ -9,12 +9,9 @@ from loguru import logger
 from playwright.async_api import async_playwright, Browser
 
 from src.config import (
-    HIKVISION_BASE_URL,
+    hikvision,
+    scraper,
     HIKVISION_SELECTORS,
-    HIKVISION_IP_PRODUCTS_URL,
-    HIKVISION_ITS_PRODUCTS_URL,
-    HIKVISION_THERMAL_PRODUCTS_URL,
-    DEFAULT_HEADERS,
     HIKVISION_IP_SUBCATEGORIES,
 )
 from src.models.camera import CategoryLink, CameraRecord
@@ -38,7 +35,7 @@ class HikvisionCameraScraper(CameraScraperBase):
 
         :param download_cache: Optional DownloadCache for skipping downloaded content
         """
-        super().__init__(HIKVISION_BASE_URL)
+        super().__init__(hikvision.base_url)
         self.download_cache = download_cache
         self._browser: Browser | None = None
         self._playwright = None
@@ -91,7 +88,7 @@ class HikvisionCameraScraper(CameraScraperBase):
 
         try:
             # 1. Navigate to IP Products page
-            await page.goto(HIKVISION_IP_PRODUCTS_URL, wait_until="networkidle")
+            await page.goto(hikvision.ip_products_url, wait_until="networkidle")
 
             # 2. Wait for search list to load
             await page.wait_for_selector(HIKVISION_SELECTORS["search_list"])
@@ -172,7 +169,7 @@ class HikvisionCameraScraper(CameraScraperBase):
         try:
             # 1. Navigate to ITS Products page
             logger.info("Navigating to ITS Products page")
-            await page.goto(HIKVISION_ITS_PRODUCTS_URL, wait_until="networkidle")
+            await page.goto(hikvision.its_products_url, wait_until="networkidle")
 
             # 2. Wait for product grid to load
             await page.wait_for_selector(HIKVISION_SELECTORS["product_grid"])
@@ -241,7 +238,7 @@ class HikvisionCameraScraper(CameraScraperBase):
         try:
             # 1. Navigate to Thermal Products page
             logger.info("Navigating to Thermal Products page")
-            await page.goto(HIKVISION_THERMAL_PRODUCTS_URL, wait_until="networkidle")
+            await page.goto(hikvision.thermal_products_url, wait_until="networkidle")
 
             # 2. Wait for product grid to load
             await page.wait_for_selector(HIKVISION_SELECTORS["product_grid"])
@@ -319,7 +316,7 @@ class HikvisionCameraScraper(CameraScraperBase):
         categories.append(
             CategoryLink(
                 name="ITS - Traffic Cameras",
-                href=HIKVISION_ITS_PRODUCTS_URL,  # Direct URL to ITS products
+                href=hikvision.its_products_url,  # Direct URL to ITS products
                 node_id="ITS",  # Tag to identify product type
             )
         )
@@ -328,7 +325,7 @@ class HikvisionCameraScraper(CameraScraperBase):
         categories.append(
             CategoryLink(
                 name="Thermal - All Products",
-                href=HIKVISION_THERMAL_PRODUCTS_URL,  # Direct URL to Thermal products
+                href=hikvision.thermal_products_url,  # Direct URL to Thermal products
                 node_id="THERMAL",  # Tag to identify product type
             )
         )
@@ -398,7 +395,7 @@ class HikvisionCameraScraper(CameraScraperBase):
         :param category_name: Top-level category (e.g., "Network Cameras")
         :return: CameraRecord with detailed product information
         """
-        product_page_url = f"{HIKVISION_BASE_URL}{product_url}"
+        product_page_url = f"{hikvision.base_url}{product_url}"
 
         # Check cache first
         if self.download_cache and self.download_cache.has_cached_product(
@@ -621,10 +618,10 @@ class HikvisionCameraScraper(CameraScraperBase):
         Download image using httpx but with anti-hotlink headers Hikvision commonly expects.
         """
         headers = {
-            **DEFAULT_HEADERS,
+            **scraper.default_headers,
             "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
-            "Referer": f"{HIKVISION_BASE_URL}/",
-            "Origin": HIKVISION_BASE_URL,
+            "Referer": f"{hikvision.base_url}/",
+            "Origin": hikvision.base_url,
         }
 
         response = await self.client.get(
@@ -640,10 +637,10 @@ class HikvisionCameraScraper(CameraScraperBase):
         browser = await self._get_browser()
         context = await browser.new_context(
             extra_http_headers={
-                **DEFAULT_HEADERS,
+                **scraper.default_headers,
                 "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
-                "Referer": f"{HIKVISION_BASE_URL}/",
-                "Origin": HIKVISION_BASE_URL,
+                "Referer": f"{hikvision.base_url}/",
+                "Origin": hikvision.base_url,
             }
         )
         try:
