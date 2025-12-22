@@ -13,7 +13,7 @@ import sys
 project = "CCTV Identification and Research (cIDaR)"
 copyright = "2025, jethronap"
 author = "jethronap"
-release = "0.4.0"
+release = "0.5.0"
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
