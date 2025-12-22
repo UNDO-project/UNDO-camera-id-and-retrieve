@@ -11,7 +11,7 @@ from pathlib import Path
 import pandas as pd
 from loguru import logger
 
-from src.config import OUTPUT_DIR
+from src.config import paths
 
 
 def load_parquet(parquet_path: Path) -> pd.DataFrame | None:
@@ -198,7 +198,7 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    parquet_path = OUTPUT_DIR / "products.parquet"
+    parquet_path = paths.output_dir / "products.parquet"
 
     df = load_parquet(parquet_path)
     if df is None:
