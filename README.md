@@ -625,6 +625,107 @@ For production deployments:
 
 5. **Consider using Docker secrets** for sensitive configuration
 
+## Testing and Code Quality
+
+The project uses pytest for testing, ruff for linting/formatting, and pytest-cov for code coverage tracking.
+
+### Running Tests
+
+**Basic test run:**
+```bash
+# Run all tests
+pytest
+
+# Run specific test file
+pytest tests/test_identification_service.py
+
+# Run tests matching a pattern
+pytest -k "test_detector"
+
+# Run with verbose output
+pytest -v
+```
+
+### Code Coverage
+
+**Run tests with coverage:**
+```bash
+# Terminal report with missing lines
+pytest --cov=src --cov-report=term-missing
+
+# Generate HTML coverage report
+pytest --cov=src --cov-report=html
+
+# Both terminal and HTML reports
+pytest --cov=src --cov-report=html --cov-report=term-missing
+
+# JSON report (for tooling/CI)
+pytest --cov=src --cov-report=json
+```
+
+**View HTML coverage report:**
+```bash
+open htmlcov/index.html  # macOS
+xdg-open htmlcov/index.html  # Linux
+```
+
+**Coverage configuration:**
+
+Coverage settings are configured in `pyproject.toml`:
+- Source: `src/` directory
+- Omitted: `tests/`, `__init__.py`, `conftest.py`
+- Reports: Terminal (with missing lines) and HTML
+- HTML output: `htmlcov/` directory
+
+### Linting and Formatting
+
+**Lint with ruff:**
+```bash
+# Check all files
+ruff check src/ tests/
+
+# Fix auto-fixable issues
+ruff check --fix src/ tests/
+```
+
+**Format with ruff:**
+```bash
+# Format all files
+ruff format src/ tests/
+
+# Check formatting without making changes
+ruff format --check src/ tests/
+```
+
+### Pre-commit Hooks
+
+The project uses pre-commit hooks to automatically run checks before commits.
+
+**Run hooks manually:**
+```bash
+# Run all hooks on all files
+pre-commit run --all-files
+
+# Run all hooks on staged files
+pre-commit run
+
+# Run specific hook
+pre-commit run ruff-format --all-files
+```
+
+**Install hooks (optional - runs automatically on git commit):**
+```bash
+pre-commit install
+```
+
+### Coverage Targets
+
+Current focus areas for improving coverage:
+1. **API layer** (`src/api/`) - Write integration tests for FastAPI endpoints
+2. **Manifest reconstruction** (`src/building/manifest_reconstruction.py`) - Test filesystem scanning and cache loading
+3. **CLI entry points** - Test command-line interfaces
+4. **Scrapers** - Add tests for vendor-specific extraction logic
+
 ## Building the documentation
 
 The project uses Sphinx to generate HTML documentation from docstrings and

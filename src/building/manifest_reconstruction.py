@@ -2,7 +2,7 @@
 
 import json
 import sqlite3
-from datetime import datetime
+from datetime import datetime, UTC
 from pathlib import Path
 
 from loguru import logger
@@ -191,8 +191,8 @@ class ManifestReconstructor:
         logger.info("Building manifest structure...")
 
         manifest = {
-            "scrape_timestamp": datetime.utcnow().isoformat(),
-            "reconstruction_timestamp": datetime.utcnow().isoformat(),
+            "scrape_timestamp": datetime.now(UTC).isoformat(),
+            "reconstruction_timestamp": datetime.now(UTC).isoformat(),
             "reconstructed": True,
             "total_categories": 0,
             "total_series": 0,
