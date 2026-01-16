@@ -1,5 +1,6 @@
 """FastAPI application for camera identification service."""
 
+from contextlib import asynccontextmanager
 from typing import Dict, Any
 
 from fastapi import FastAPI
@@ -10,13 +11,33 @@ from src.api.config import settings
 from src.api.routes import health, identification, catalog
 from src.api.exceptions import generic_exception_handler
 
-# Create FastAPI app
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan event handler for startup and shutdown.
+
+    This replaces the deprecated @app.on_event("startup") and
+    @app.on_event("shutdown") decorators.
+    """
+    # Startup
+    logger.info("Starting cIDaR API server...")
+    logger.info(f"CORS origins: {settings.cors_origins}")
+    logger.info("API documentation available at /docs")
+
+    yield  # Application runs here
+
+    # Shutdown
+    logger.info("Shutting down cIDaR API server...")
+
+
+# Create FastAPI app with lifespan handler
 app = FastAPI(
     title="cIDaR - Camera Identification and Research API",
     description="API for identifying CCTV cameras in images using YOLOv8 and CLIP",
     version="0.5.0",
     docs_url="/docs",
     redoc_url="/redoc",
+    lifespan=lifespan,
 )
 
 # Configure CORS
@@ -50,20 +71,6 @@ async def root() -> Dict[str, Any]:
         "docs": "/docs",
         "health": "/api/v1/health",
     }
-
-
-@app.on_event("startup")
-async def startup_event() -> None:
-    """Run on application startup."""
-    logger.info("Starting cIDaR API server...")
-    logger.info(f"CORS origins: {settings.cors_origins}")
-    logger.info("API documentation available at /docs")
-
-
-@app.on_event("shutdown")
-async def shutdown_event() -> None:
-    """Run on application shutdown."""
-    logger.info("Shutting down cIDaR API server...")
 
 
 def run() -> None:
