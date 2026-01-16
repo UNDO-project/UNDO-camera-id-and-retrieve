@@ -1,5 +1,10 @@
 # CCTV Identification and Research | (cIDaR)
 
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+![Python](https://img.shields.io/badge/python-3.12+-green)
+
+
+
 A multi-stage pipeline for scraping CCTV camera product data from vendor sites,
 building a structured dataset, validating it, and identifying
 cameras in real-world images using a YOLOv8-based detector and a catalog index.
