@@ -23,6 +23,7 @@ class CatalogStatsResponse(BaseModel):
     """Response for catalog statistics."""
 
     total_cameras: int = Field(..., description="Total cameras in catalog")
+    vendor_count: int = Field(..., description="Number of unique vendors in catalog")
     embeddings_loaded: bool = Field(..., description="Whether embeddings are loaded")
     embedding_count: int = Field(..., description="Number of embeddings available")
     catalog_path: str = Field(..., description="Path to catalog parquet file")

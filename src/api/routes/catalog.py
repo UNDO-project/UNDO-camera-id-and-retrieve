@@ -36,22 +36,21 @@ async def get_catalog_stats(
         ```
     """
     try:
-        # Check if catalog index exists
-        catalog_loaded = (
-            hasattr(service, "catalog_index") and service.catalog_index is not None
-        )
+        # Check if catalog index exists (correct attribute is 'index', not 'catalog_index')
+        index_loaded = hasattr(service, "index") and service.index is not None
 
-        if not catalog_loaded:
+        if not index_loaded:
             return CatalogStatsResponse(
                 total_cameras=0,
+                vendor_count=0,
                 embeddings_loaded=False,
                 embedding_count=0,
                 catalog_path="Not loaded",
             )
 
-        catalog_index = service.catalog_index
+        catalog_index = service.index
 
-        # Get embedding count
+        # Get embedding count from CatalogIndex
         embedding_count = 0
         embeddings_loaded = False
         if (
@@ -61,16 +60,25 @@ async def get_catalog_stats(
             embeddings_loaded = True
             embedding_count = len(catalog_index.embeddings)
 
-        # Get total cameras from catalog
+        # Get total cameras and unique vendors from service.catalog (dict of CameraRecords)
         total_cameras = 0
-        if hasattr(catalog_index, "catalog") and catalog_index.catalog is not None:
-            total_cameras = len(catalog_index.catalog)
+        vendor_count = 0
+        if hasattr(service, "catalog") and service.catalog is not None:
+            total_cameras = len(service.catalog)
+
+            # Count unique vendors (from CameraRecord.source field)
+            unique_vendors = set()
+            for camera_record in service.catalog.values():
+                if hasattr(camera_record, "source") and camera_record.source:
+                    unique_vendors.add(camera_record.source)
+            vendor_count = len(unique_vendors)
 
         # Get catalog path
         catalog_path = str(paths.output_dir / "products.parquet")
 
         return CatalogStatsResponse(
             total_cameras=total_cameras,
+            vendor_count=vendor_count,
             embeddings_loaded=embeddings_loaded,
             embedding_count=embedding_count,
             catalog_path=catalog_path,
