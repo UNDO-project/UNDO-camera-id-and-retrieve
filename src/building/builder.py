@@ -126,8 +126,8 @@ class DatasetBuilder:
                             )
                             continue
 
-                        # Find image files
-                        image_files = self._find_image_files(
+                        # Find image files and detect vendor
+                        image_files, vendor_source = self._find_image_files_and_vendor(
                             category_name, series_name, camera_id
                         )
 
@@ -150,7 +150,7 @@ class DatasetBuilder:
                             display_name=model_name,
                             description=None,
                             specifications={},
-                            source="Axis Communications",
+                            source=vendor_source or "Unknown",
                             category="Network Camera",
                             product_category=category_name,
                             product_series=series_name,
@@ -173,30 +173,64 @@ class DatasetBuilder:
             logger.error(f"Failed to build dataset: {e}")
             return False
 
+    def _find_image_files_and_vendor(
+        self, category_name: str, series_name: str, camera_id: str
+    ) -> tuple[list[str], str | None]:
+        r"""
+        Find all image files for a product and detect vendor from filesystem.
+
+        Filesystem structure: data/images/{VENDOR}/{CATEGORY}/{SERIES}/{CAMERA_ID}/
+
+        :param category_name: Product category
+        :param series_name: Product series
+        :param camera_id: Camera ID
+        :return: Tuple of (image file paths, vendor source name)
+        """
+        category_dir = category_name.upper().replace(" ", "_")
+        series_dir = series_name.replace(" ", "_")
+        images_dir = paths.data_dir / "images"
+
+        # Vendor name mapping
+        vendor_map = {
+            "AXIS_COMMUNICATIONS": "Axis Communications",
+            "HIKVISION": "HikVision",
+        }
+
+        # Search in all vendor directories
+        for vendor_dir in images_dir.iterdir():
+            if not vendor_dir.is_dir():
+                continue
+
+            product_dir = vendor_dir / category_dir / series_dir / camera_id
+
+            if product_dir.exists():
+                image_files = []
+                for img_file in sorted(product_dir.glob("*.webp")):
+                    relative_path = img_file.relative_to(Path.cwd())
+                    image_files.append(str(relative_path))
+
+                # Detect vendor from directory name
+                vendor_name = vendor_map.get(vendor_dir.name, vendor_dir.name)
+                return image_files, vendor_name
+
+        return [], None
+
     def _find_image_files(
         self, category_name: str, series_name: str, camera_id: str
     ) -> list[str]:
         r"""
         Find all image files for a product in filesystem.
 
+        Filesystem structure: data/images/{VENDOR}/{CATEGORY}/{SERIES}/{CAMERA_ID}/
+
         :param category_name: Product category
         :param series_name: Product series
         :param camera_id: Camera ID
         :return: List of relative paths to image files
         """
-        category_dir = category_name.upper().replace(" ", "_")
-        series_dir = series_name.replace(" ", "_")
-
-        product_dir = paths.data_dir / "images" / category_dir / series_dir / camera_id
-
-        if not product_dir.exists():
-            return []
-
-        image_files = []
-        for img_file in sorted(product_dir.glob("*.webp")):
-            relative_path = img_file.relative_to(Path.cwd())
-            image_files.append(str(relative_path))
-
+        image_files, _ = self._find_image_files_and_vendor(
+            category_name, series_name, camera_id
+        )
         return image_files
 
     @staticmethod
@@ -206,6 +240,8 @@ class DatasetBuilder:
         r"""
         Find PDF file for a product in filesystem.
 
+        Filesystem structure: data/pdfs/{VENDOR}/{CATEGORY}/{SERIES}/{CAMERA_ID}.pdf
+
         :param category_name: Product category
         :param series_name: Product series
         :param camera_id: Camera ID
@@ -213,14 +249,18 @@ class DatasetBuilder:
         """
         category_dir = category_name.upper().replace(" ", "_")
         series_dir = series_name.replace(" ", "_")
+        pdfs_dir = paths.data_dir / "pdfs"
 
-        pdf_file = (
-            paths.data_dir / "pdfs" / category_dir / series_dir / f"{camera_id}.pdf"
-        )
+        # Search in all vendor directories
+        for vendor_dir in pdfs_dir.iterdir():
+            if not vendor_dir.is_dir():
+                continue
 
-        if pdf_file.exists():
-            relative_path = pdf_file.relative_to(Path.cwd())
-            return str(relative_path)
+            pdf_file = vendor_dir / category_dir / series_dir / f"{camera_id}.pdf"
+
+            if pdf_file.exists():
+                relative_path = pdf_file.relative_to(Path.cwd())
+                return str(relative_path)
 
         return None
 
