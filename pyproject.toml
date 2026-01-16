@@ -32,6 +32,7 @@ dependencies = [
 [project.scripts]
 cidar-scrape = "src.scraping.main:main"
 cidar-build = "src.building.main:main"
+cidar-rebuild-manifest = "src.building.reconstruct_cli:main"
 cidar-validate = "src.validation.cli:main"
 cidar-identify = "src.identification.cli:main"
 cidar-api = "src.api.main:run"
