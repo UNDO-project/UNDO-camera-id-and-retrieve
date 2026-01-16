@@ -70,6 +70,7 @@ The project is organized into sequential stages:
      - **Append mode**: Merge new data with existing datasets (`--append`)
      - **Dataset versioning**: Track dataset evolution over time (`--version-mode auto`)
      - **Merge strategies**: Handle duplicates with update/skip/error strategies
+     - **Manifest reconstruction**: Rebuild manifest from cache without rescraping (`cidar-rebuild-manifest`)
 
 3. **Stage 3 – Validate dataset**
    - Entry point: `cidar-validate` (console script from `src/validation/cli.py`)
@@ -223,6 +224,44 @@ output/
 ├── verification_manifest_v3.json  # Version 3 manifest
 └── dataset_metadata.json          # Version history and metadata
 ```
+
+#### Manifest Reconstruction (Recovery Tool)
+
+If the verification manifest is missing or corrupted but you still have the downloaded data and cache, you can reconstruct the manifest without rescraping:
+
+```bash
+# Reconstruct manifest from filesystem and cache
+cidar-rebuild-manifest
+
+# Force overwrite existing manifest
+cidar-rebuild-manifest --force
+```
+
+**When to use:**
+- Manifest file (`verification_manifest.json`) was deleted or corrupted
+- Scraping completed but manifest creation failed
+- Need to regenerate manifest from existing data
+
+**How it works:**
+1. Scans filesystem structure in `data/images/` and `data/pdfs/`
+2. Loads product metadata from `output/download_cache.db`
+3. Matches downloaded files with cached metadata
+4. Reconstructs the manifest with file counts and statistics
+
+**Example output:**
+```
+INFO: Found 2 categories with 15 series and 1517 products
+INFO: Loaded 1678 products from cache
+INFO: Built manifest with 1517 products, 3663 images, 1402 PDFs
+SUCCESS: Reconstructed manifest saved to output/verification_manifest.json
+```
+
+After reconstruction, proceed with the normal build:
+```bash
+cidar-build
+```
+
+**Note:** This tool prevents having to rescrape all data when only the manifest is missing, saving significant time and network bandwidth.
 
 ### Stage 3 – Validate dataset
 
