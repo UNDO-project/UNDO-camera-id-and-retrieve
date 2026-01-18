@@ -2,6 +2,71 @@
 
 This directory contains Jupyter notebooks for interactive demonstrations and experiments with the CCTV scrapers pipeline.
 
+## ⚠️ Required Setup Before Running Notebooks
+
+**IMPORTANT:** All notebooks require setup before they can run. You must copy data files to `notebooks/data/` or notebooks will fail with `FileNotFoundError`.
+
+### Prerequisites
+
+1. **You must have already run the pipeline** (Stages 1-2) to generate the required files:
+   - `output/products.parquet` - Dataset file
+   - `output/verification_manifest.json` - Manifest file
+
+2. **If you don't have these files**, generate them first:
+   ```bash
+   # Stage 1: Scrape vendor data
+   cidar-scrape
+
+   # Stage 2: Build dataset
+   cidar-build
+   ```
+
+
+### Setup Steps
+
+**Step 1: Create the notebooks data directory**
+```bash
+mkdir -p notebooks/data
+```
+
+**Step 2: Copy required files**
+```bash
+# Copy dataset file
+cp output/products.parquet notebooks/data/
+
+# Copy manifest file
+cp output/verification_manifest.json notebooks/data/
+```
+
+**Step 3: Verify setup was successful**
+```bash
+# Check that files exist
+ls -lh notebooks/data/
+
+# Or use these verification commands
+test -f notebooks/data/products.parquet && echo "✓ Dataset ready" || echo "✗ Missing dataset - see setup instructions"
+test -f notebooks/data/verification_manifest.json && echo "✓ Manifest ready" || echo "✗ Missing manifest - see setup instructions"
+```
+
+### Why This Setup Is Required
+
+- **Safety:** Notebooks work on copies in `notebooks/data/` to prevent modifying your production data in `output/`
+- **Isolation:** Each notebook creates, modifies, and deletes test files without affecting your main dataset
+- **Experimentation:** You can safely test append modes, versioning, and validation without risk
+
+### Troubleshooting
+
+**Problem:** `FileNotFoundError: 'notebooks/data/products.parquet'`
+**Solution:** Follow setup steps above to copy files to `notebooks/data/`
+
+**Problem:** Files don't exist in `output/` directory
+**Solution:** Run the pipeline first (see Prerequisites above)
+
+**Problem:** Notebooks fail even after copying files
+**Solution:** Verify you're running Jupyter from the project root, not from `notebooks/` directory
+
+---
+
 ## Available Notebooks
 
 ### dataset_append_demo.ipynb (Phase 1)
@@ -20,11 +85,12 @@ This directory contains Jupyter notebooks for interactive demonstrations and exp
 
 **Usage**:
 ```bash
-# Launch Jupyter from project root
-jupyter notebook notebooks/dataset_append_demo.ipynb
+# From project root, launch Jupyter
+jupyter notebook
 
-# Or use JupyterLab
-jupyter lab notebooks/dataset_append_demo.ipynb
+# Then navigate to notebooks/dataset_append_demo.ipynb in the browser
+# Or directly open it:
+jupyter notebook notebooks/dataset_append_demo.ipynb
 ```
 
 **Key Sections**:
@@ -116,6 +182,45 @@ jupyter lab notebooks/validation_integration_demo.ipynb
 10. Verify symlinks point to current version
 11. Cleanup test files
 
+### manifest_reconstruction_demo.ipynb (Phase 4)
+
+**Purpose**: Interactive demonstration of manifest reconstruction from cache database and filesystem
+
+**Dataset**: Uses copies of actual production dataset and requires `output/download_cache.db` and `data/images/`
+
+**Features Demonstrated**:
+- Simulating manifest loss (backup and delete)
+- Reconstructing manifest from cache + filesystem
+- Comparing reconstructed vs original manifest
+- Validating dataset with reconstructed manifest
+- CLI command usage (`cidar-reconstruct-manifest`)
+- Edge case handling (missing cache/data)
+
+**Usage**:
+```bash
+# Launch Jupyter from project root
+jupyter notebook notebooks/manifest_reconstruction_demo.ipynb
+
+# Or use JupyterLab
+jupyter lab notebooks/manifest_reconstruction_demo.ipynb
+```
+
+**Prerequisites** (in addition to standard setup):
+- `output/download_cache.db` - Cache database from scraping
+- `data/images/` - Filesystem structure from scraping
+
+**Key Sections**:
+1. Setup paths and verify prerequisites
+2. Inspect original manifest
+3. Create backup and simulate manifest loss
+4. Reconstruct manifest from cache + filesystem
+5. Compare original vs reconstructed
+6. Validate dataset with reconstructed manifest
+7. Restore original manifest
+8. CLI command demonstration
+9. Test edge cases
+10. Cleanup test files
+
 ## Running Notebooks
 
 ### Prerequisites
@@ -131,11 +236,26 @@ pip install jupyter notebook
 
 ### Launch Jupyter
 
-From the project root:
+**IMPORTANT:** You **must** run Jupyter from the **project root** directory, not from `notebooks/`:
+
 ```bash
+# Navigate to project root first
+cd /path/to/cctv-scrapers
+
+# Verify you're in the project root (should see src/, notebooks/, data/, etc.)
+ls
+
+# Launch Jupyter from project root
 jupyter notebook
-# Navigate to notebooks/ directory in the browser
+
+# In the browser, navigate to notebooks/ and open a notebook
 ```
+
+**Why project root?** The notebooks access both:
+- Test data in `notebooks/data/` (copies for safe testing)
+- Production data in `data/` and `output/` (for building datasets)
+
+Running from project root ensures all paths resolve correctly.
 
 ## Data Directory
 
@@ -143,7 +263,7 @@ jupyter notebook
 - Contains copies of production datasets for safe testing
 - Files are copied from `output/` directory
 - All notebook operations work on these copies, never touching production data
-- To refresh data: `cp output/products.parquet notebooks/data/` and `cp output/verification_manifest.json notebooks/data/`
+  - To refresh data: `cp output/products.parquet notebooks/data/` and `cp output/verification_manifest.json notebooks/data/`
 
 ## Notes
 
