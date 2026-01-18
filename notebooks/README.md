@@ -2,6 +2,72 @@
 
 This directory contains Jupyter notebooks for interactive demonstrations and experiments with the CCTV scrapers pipeline.
 
+## ⚠️ Required Setup Before Running Notebooks
+
+**IMPORTANT:** All notebooks require setup before they can run. You must copy data files to `notebooks/data/` or notebooks will fail with `FileNotFoundError`.
+
+### Prerequisites
+
+1. **You must have already run the pipeline** (Stages 1-2) to generate the required files:
+   - `output/products.parquet` - Dataset file
+   - `output/verification_manifest.json` - Manifest file
+
+2. **If you don't have these files**, generate them first:
+   ```bash
+   # Stage 1: Scrape vendor data
+   cidar-scrape
+
+   # Stage 2: Build dataset
+   cidar-build
+   ```
+
+   See [CLAUDE.md](../CLAUDE.md) for full pipeline documentation.
+
+### Setup Steps
+
+**Step 1: Create the notebooks data directory**
+```bash
+mkdir -p notebooks/data
+```
+
+**Step 2: Copy required files**
+```bash
+# Copy dataset file
+cp output/products.parquet notebooks/data/
+
+# Copy manifest file
+cp output/verification_manifest.json notebooks/data/
+```
+
+**Step 3: Verify setup was successful**
+```bash
+# Check that files exist
+ls -lh notebooks/data/
+
+# Or use these verification commands
+test -f notebooks/data/products.parquet && echo "✓ Dataset ready" || echo "✗ Missing dataset - see setup instructions"
+test -f notebooks/data/verification_manifest.json && echo "✓ Manifest ready" || echo "✗ Missing manifest - see setup instructions"
+```
+
+### Why This Setup Is Required
+
+- **Safety:** Notebooks work on copies in `notebooks/data/` to prevent modifying your production data in `output/`
+- **Isolation:** Each notebook creates, modifies, and deletes test files without affecting your main dataset
+- **Experimentation:** You can safely test append modes, versioning, and validation without risk
+
+### Troubleshooting
+
+**Problem:** `FileNotFoundError: 'notebooks/data/products.parquet'`
+**Solution:** Follow setup steps above to copy files to `notebooks/data/`
+
+**Problem:** Files don't exist in `output/` directory
+**Solution:** Run the pipeline first (see Prerequisites above)
+
+**Problem:** Notebooks fail even after copying files
+**Solution:** Verify you're running Jupyter from the project root, not from `notebooks/` directory
+
+---
+
 ## Available Notebooks
 
 ### dataset_append_demo.ipynb (Phase 1)
