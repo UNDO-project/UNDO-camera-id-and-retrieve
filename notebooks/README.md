@@ -85,11 +85,12 @@ test -f notebooks/data/verification_manifest.json && echo "✓ Manifest ready" |
 
 **Usage**:
 ```bash
-# Launch Jupyter from project root
-jupyter notebook notebooks/dataset_append_demo.ipynb
+# From project root, launch Jupyter
+jupyter notebook
 
-# Or use JupyterLab
-jupyter lab notebooks/dataset_append_demo.ipynb
+# Then navigate to notebooks/dataset_append_demo.ipynb in the browser
+# Or directly open it:
+jupyter notebook notebooks/dataset_append_demo.ipynb
 ```
 
 **Key Sections**:
@@ -235,11 +236,26 @@ pip install jupyter notebook
 
 ### Launch Jupyter
 
-From the project root:
+**IMPORTANT:** You **must** run Jupyter from the **project root** directory, not from `notebooks/`:
+
 ```bash
+# Navigate to project root first
+cd /path/to/cctv-scrapers
+
+# Verify you're in the project root (should see src/, notebooks/, data/, etc.)
+ls
+
+# Launch Jupyter from project root
 jupyter notebook
-# Navigate to notebooks/ directory in the browser
+
+# In the browser, navigate to notebooks/ and open a notebook
 ```
+
+**Why project root?** The notebooks access both:
+- Test data in `notebooks/data/` (copies for safe testing)
+- Production data in `data/` and `output/` (for building datasets)
+
+Running from project root ensures all paths resolve correctly.
 
 ## Data Directory
 
@@ -247,7 +263,7 @@ jupyter notebook
 - Contains copies of production datasets for safe testing
 - Files are copied from `output/` directory
 - All notebook operations work on these copies, never touching production data
-- To refresh data: `cp output/products.parquet notebooks/data/` and `cp output/verification_manifest.json notebooks/data/`
+  - To refresh data: `cp output/products.parquet notebooks/data/` and `cp output/verification_manifest.json notebooks/data/`
 
 ## Notes
 
