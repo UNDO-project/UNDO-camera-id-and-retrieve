@@ -21,7 +21,6 @@ This directory contains Jupyter notebooks for interactive demonstrations and exp
    cidar-build
    ```
 
-   See [CLAUDE.md](../CLAUDE.md) for full pipeline documentation.
 
 ### Setup Steps
 
