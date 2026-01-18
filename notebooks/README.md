@@ -181,6 +181,45 @@ jupyter lab notebooks/validation_integration_demo.ipynb
 10. Verify symlinks point to current version
 11. Cleanup test files
 
+### manifest_reconstruction_demo.ipynb (Phase 4)
+
+**Purpose**: Interactive demonstration of manifest reconstruction from cache database and filesystem
+
+**Dataset**: Uses copies of actual production dataset and requires `output/download_cache.db` and `data/images/`
+
+**Features Demonstrated**:
+- Simulating manifest loss (backup and delete)
+- Reconstructing manifest from cache + filesystem
+- Comparing reconstructed vs original manifest
+- Validating dataset with reconstructed manifest
+- CLI command usage (`cidar-reconstruct-manifest`)
+- Edge case handling (missing cache/data)
+
+**Usage**:
+```bash
+# Launch Jupyter from project root
+jupyter notebook notebooks/manifest_reconstruction_demo.ipynb
+
+# Or use JupyterLab
+jupyter lab notebooks/manifest_reconstruction_demo.ipynb
+```
+
+**Prerequisites** (in addition to standard setup):
+- `output/download_cache.db` - Cache database from scraping
+- `data/images/` - Filesystem structure from scraping
+
+**Key Sections**:
+1. Setup paths and verify prerequisites
+2. Inspect original manifest
+3. Create backup and simulate manifest loss
+4. Reconstruct manifest from cache + filesystem
+5. Compare original vs reconstructed
+6. Validate dataset with reconstructed manifest
+7. Restore original manifest
+8. CLI command demonstration
+9. Test edge cases
+10. Cleanup test files
+
 ## Running Notebooks
 
 ### Prerequisites
