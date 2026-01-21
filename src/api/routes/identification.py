@@ -70,8 +70,10 @@ async def identify_camera(
 
         logger.info(f"Processing image: {image.filename} (size: {len(contents)} bytes)")
 
-        # Run identification
-        results = service.identify_from_image(tmp_path, top_k=top_k)
+        # Run identification with min_similarity parameter
+        results = service.identify_from_image(
+            tmp_path, top_k=top_k, min_similarity=min_similarity
+        )
 
         processing_time = (time.time() - start_time) * 1000
 
