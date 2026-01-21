@@ -86,7 +86,10 @@ class IdentificationService:
             self.crop_dir.mkdir(parents=True, exist_ok=True)
 
     def identify_from_image(
-        self, image_path: Path | str, top_k: int = 5
+        self,
+        image_path: Path | str,
+        top_k: int = 5,
+        min_similarity: Optional[float] = None,
     ) -> List[RetrievalResult]:
         r"""Identify cameras in the given image.
 
@@ -101,12 +104,18 @@ class IdentificationService:
 
         :param image_path: Path to the input image
         :param top_k: Maximum number of matches to return per detection
+        :param min_similarity: Optional minimum similarity threshold. If None, uses self.min_similarity
         :return: List of retrieval results, one per detection
         :raises FileNotFoundError: If the input image does not exist
         """
         image_path = Path(image_path)
         if not image_path.exists():
             raise FileNotFoundError(f"Image not found: {image_path}")
+
+        # Use provided min_similarity or fall back to instance default
+        similarity_threshold = (
+            min_similarity if min_similarity is not None else self.min_similarity
+        )
 
         logger.info(f"Running detection on image: {image_path}")
         detections = self.detector.detect_from_path(image_path)
@@ -164,7 +173,7 @@ class IdentificationService:
             # Filter by similarity threshold and enrich with full records.
             filtered_matches: List[CameraMatch] = []
             for match in matches:
-                if match.score < self.min_similarity:
+                if match.score < similarity_threshold:
                     continue
 
                 record = self.catalog.get(match.camera_id)

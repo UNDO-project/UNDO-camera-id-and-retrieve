@@ -4,7 +4,7 @@ Tests all API endpoints using FastAPI TestClient with mocked services.
 """
 
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 import pytest
@@ -84,11 +84,17 @@ class FakeIdentificationService:
         self.catalog_index = self.index  # Alias for health check compatibility
 
     def identify_from_image(
-        self, image_path: Path | str, top_k: int = 5
+        self,
+        image_path: Path | str,
+        top_k: int = 5,
+        min_similarity: Optional[float] = None,
     ) -> List[RetrievalResult]:
         """Return fake identification results."""
         image_path = Path(image_path)
         detections = self.detector.detect_from_path(image_path)
+
+        # Use provided min_similarity or fall back to default
+        similarity_threshold = min_similarity if min_similarity is not None else 0.3
 
         results = []
         for detection in detections:
@@ -96,15 +102,19 @@ class FakeIdentificationService:
             query_vector = np.random.rand(512)  # Fake embedding
             matches = self.index.search(query_vector, top_k=top_k)
 
-            # Enrich matches with catalog records
+            # Filter by similarity threshold and enrich matches with catalog records
+            filtered_matches = []
             for match in matches:
+                if match.score < similarity_threshold:
+                    continue
                 if match.camera_id in self.catalog:
                     match.record = self.catalog[match.camera_id]
+                filtered_matches.append(match)
 
             results.append(
                 RetrievalResult(
                     detection=detection,
-                    matches=matches,
+                    matches=filtered_matches,
                 )
             )
 
