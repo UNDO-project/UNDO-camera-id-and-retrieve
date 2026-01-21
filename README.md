@@ -307,6 +307,24 @@ Key entry points:
   - Combines YOLOv8 detection, cropping, CLIP embeddings, and catalog search.
 - CLI: `cidar-identify` (console script)
 
+#### ⚠️ Important: Catalog Embeddings
+
+**Embeddings are NOT automatically built by `cidar-build`**. You must build them manually as a separate step using the Python function below.
+
+**When to rebuild embeddings:**
+- ✅ After running `cidar-build` for the first time
+- ✅ After appending new cameras via `cidar-build --append`
+- ✅ After restoring or replacing `output/products.parquet`
+- ✅ When the API returns "missing record data" errors
+
+**Why embeddings are separate:**
+- Computing CLIP embeddings is expensive (~40 seconds for 1500 cameras)
+- Only needed for identification, not for scraping/building
+- Allows rebuilding catalog metadata without recomputing embeddings
+
+**What happens if embeddings are out of sync:**
+If `catalog_embeddings.npz` contains camera IDs that don't exist in `products.parquet`, the identification API will fail with "missing record data" errors. Always rebuild embeddings after modifying the catalog.
+
 Example CLI usage:
 
 ```bash
