@@ -12,7 +12,7 @@ from src.storage.dataset import DatasetManager
 logger.add(lambda msg: print(msg, end=""))
 
 
-def test_dataset_manager() -> None:
+def test_dataset_manager(tmp_path: Path) -> None:
     r"""
     Test DatasetManager with sample CameraRecord.
     """
@@ -62,8 +62,9 @@ def test_dataset_manager() -> None:
         ),
     ]
 
-    # Create manager and add records
-    dataset_manager = DatasetManager()
+    # Create manager and add records (use tmp_path to avoid modifying production data)
+    test_dataset_path = tmp_path / "products_test.parquet"
+    dataset_manager = DatasetManager(dataset_path=test_dataset_path)
     for record in records:
         dataset_manager.add_record(record)
 
@@ -74,13 +75,10 @@ def test_dataset_manager() -> None:
     logger.success("Dataset saved successfully")
 
     # Verify parquet file was created
-    if dataset_manager.dataset_path.exists():
-        file_size = dataset_manager.dataset_path.stat().st_size
-        logger.success(
-            f"Parquet file created: {dataset_manager.dataset_path} ({file_size} bytes)"
-        )
-    else:
-        logger.error(f"Parquet file not found: {dataset_manager.dataset_path}")
+    assert test_dataset_path.exists(), f"Parquet file not created: {test_dataset_path}"
+    file_size = test_dataset_path.stat().st_size
+    assert file_size > 0, "Parquet file is empty"
+    logger.success(f"Parquet file created: {test_dataset_path} ({file_size} bytes)")
 
 
 def test_product_extraction_with_dataset_integration() -> None:
