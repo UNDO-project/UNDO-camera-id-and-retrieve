@@ -85,6 +85,11 @@ pytest tests/test_api_routes.py -v
 echo "Done..."
 echo "==============================================="
 
+echo "Running API middleware tests"
+pytest tests/test_api_middleware.py -v
+echo "Done..."
+echo "==============================================="
+
 echo ""
 echo "=========================================="
 echo "All individual tests completed!"
