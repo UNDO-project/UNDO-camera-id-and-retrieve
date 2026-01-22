@@ -113,3 +113,101 @@ def test_flatten_specs():
             cameras[0].specs.max_resolution is not None
             or cameras[0].specs.max_resolution is None
         )
+
+
+def test_build_thumbnail_url_no_double_path():
+    """Test that thumbnail URL does not contain double path prefix."""
+    service = CatalogService()
+
+    image_file = "data/images/AXIS_COMMUNICATIONS/BOX_CAMERAS/camera.jpg"
+    url = service._build_thumbnail_url(image_file)
+
+    assert url == "/api/v1/images/AXIS_COMMUNICATIONS/BOX_CAMERAS/camera.jpg"
+    assert "data/images/data/images" not in url
+
+
+def test_build_thumbnail_url_without_prefix():
+    """Test that thumbnail URL works when path has no prefix."""
+    service = CatalogService()
+
+    image_file = "VENDOR/CATEGORY/camera.jpg"
+    url = service._build_thumbnail_url(image_file)
+
+    assert url == "/api/v1/images/VENDOR/CATEGORY/camera.jpg"
+
+
+def test_build_datasheet_url_no_double_path():
+    """Test that datasheet URL does not contain double path prefix."""
+    service = CatalogService()
+
+    datasheet_file = "data/pdfs/HIKVISION/ITS/datasheet.pdf"
+    url = service._build_datasheet_url(datasheet_file)
+
+    assert url == "/api/v1/datasheets/HIKVISION/ITS/datasheet.pdf"
+    assert "data/pdfs/data/pdfs" not in url
+
+
+def test_build_datasheet_url_without_prefix():
+    """Test that datasheet URL works when path has no prefix."""
+    service = CatalogService()
+
+    datasheet_file = "VENDOR/datasheet.pdf"
+    url = service._build_datasheet_url(datasheet_file)
+
+    assert url == "/api/v1/datasheets/VENDOR/datasheet.pdf"
+
+
+def test_build_datasheet_url_none():
+    """Test that datasheet URL returns None for empty input."""
+    service = CatalogService()
+
+    url = service._build_datasheet_url(None)
+    assert url is None
+
+
+def test_flatten_specs_nested_lens_dict():
+    """Test that nested lens dict extracts focal length correctly."""
+    service = CatalogService()
+
+    specs = {
+        "Lens": {
+            "Focal length": "3.16 mm",
+            "Horizontal field of view": "103 °",
+            "Lens mount": "M12",
+        }
+    }
+
+    result = service._flatten_specs(specs)
+
+    assert result is not None
+    assert result.lens == "3.16 mm"
+    assert "{'Focal length'" not in result.lens
+
+
+def test_flatten_specs_simple_lens_string():
+    """Test that simple lens string is preserved."""
+    service = CatalogService()
+
+    specs = {"Lens": "Fixed lens 2.8 mm"}
+
+    result = service._flatten_specs(specs)
+
+    assert result is not None
+    assert result.lens == "Fixed lens 2.8 mm"
+
+
+def test_get_camera_detail_image_files_no_double_path():
+    """Test that image_files URLs in camera detail do not have double path."""
+    service = CatalogService()
+
+    cameras, _ = service.filter_cameras(limit=1)
+    if not cameras:
+        return
+
+    camera_id = cameras[0].camera_id
+    detail = service.get_camera_detail(camera_id)
+
+    assert detail is not None
+    for image_url in detail.image_files:
+        assert "data/images/data/images" not in image_url
+        assert image_url.startswith("/api/v1/images/")
