@@ -32,5 +32,8 @@ class APISettings(BaseSettings):
     # Logging
     log_level: str = "INFO"
 
+    # Static file serving paths
+    static_file_paths: List[str] = ["/api/v1/images/", "/api/v1/datasheets/"]
+
 
 settings = APISettings()
