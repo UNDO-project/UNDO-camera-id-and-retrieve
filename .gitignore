@@ -148,6 +148,9 @@ test_html/
 model_weights/
 output/
 data/
+# Notebook test outputs (keep in version control for structure)
+notebooks/output_test/*
+!notebooks/output_test/README.md
 notebooks/data/
 
 # MacOS stuff
