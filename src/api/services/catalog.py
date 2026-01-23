@@ -1,6 +1,7 @@
 """Catalog service for loading and querying camera data."""
 
 import json
+import re
 from typing import Optional, Dict, List, Any, Tuple
 
 import pandas as pd
@@ -108,6 +109,74 @@ class CatalogService:
         )
 
     @staticmethod
+    def _find_value_recursive(data: Any, *key_patterns: str) -> Optional[str]:
+        r"""Recursively search for value matching any key pattern.
+
+        :param data: Dict or value to search
+        :param key_patterns: List of key patterns to match (case-insensitive)
+        :return: First matching value as string, or None
+        """
+        if isinstance(data, dict):
+            for key, value in data.items():
+                key_lower = key.lower()
+                for pattern in key_patterns:
+                    pattern_lower = pattern.lower()
+                    if pattern_lower in key_lower:
+                        if isinstance(value, dict):
+                            result = CatalogService._find_value_recursive(
+                                value, *key_patterns
+                            )
+                            if result:
+                                return result
+                        elif isinstance(value, str) and value not in ["–", "-"]:
+                            return value
+                        elif not isinstance(value, dict):
+                            return str(value)
+                        return None
+
+            for value in data.values():
+                result = CatalogService._find_value_recursive(value, *key_patterns)
+                if result:
+                    return result
+        return None
+
+    @staticmethod
+    def _extract_focal_length_from_combined(value: str) -> Optional[str]:
+        r"""Extract focal length from combined 'Focal Length & FOV' string.
+
+        :param value: Combined string like '2.8 mm, horizontal FOV 100.2°'
+        :return: Focal length part only, or None if not found
+        """
+        if not value:
+            return None
+
+        match = re.search(
+            r"[\d.,]+\s*mm(?:\s*to\s*[\d.,]+\s*mm)?", value, re.IGNORECASE
+        )
+        if match:
+            return match.group(0).strip()
+        return None
+
+    @staticmethod
+    def _extract_horizontal_fov_from_combined(value: str) -> Optional[str]:
+        r"""Extract horizontal FOV from combined 'Focal Length & FOV' string.
+
+        :param value: Combined string like '2.8 mm, horizontal FOV 100.2°'
+        :return: Horizontal FOV part only, or None if not found
+        """
+        if not value:
+            return None
+
+        match = re.search(
+            r"horizontal\s+(?:field\s+of\s+view\s*:?\s*)?([\d.,]+\s*°?\s*(?:to\s*[\d.,]+\s*°?)?)",
+            value,
+            re.IGNORECASE,
+        )
+        if match:
+            return match.group(1)
+        return None
+
+    @staticmethod
     def _flatten_specs(specs: Dict[str, Any]) -> Optional[CameraSpecsSummary]:
         r"""Extract commonly-used fields from specifications dict.
 
@@ -117,39 +186,44 @@ class CatalogService:
         if not specs:
             return None
 
-        spec_lower = {k.lower(): v for k, v in specs.items()}
+        max_resolution = CatalogService._find_value_recursive(
+            specs, "max resolution", "max. resolution", "resolution", "video resolution"
+        )
 
-        def get_value(*keys: str) -> Optional[str]:
-            for key in keys:
-                key_lower = key.lower()
-                if key_lower in spec_lower:
-                    value = spec_lower[key_lower]
+        lens_value = CatalogService._find_value_recursive(
+            specs, "focal length", "lens", "focal length & fov"
+        )
 
-                    if isinstance(value, dict):
-                        for subkey in [
-                            "Focal length",
-                            "focal length",
-                            "value",
-                            "Value",
-                        ]:
-                            if subkey in value:
-                                subvalue = value[subkey]
-                                return (
-                                    str(subvalue)
-                                    if not isinstance(subvalue, dict)
-                                    else None
-                                )
-                        continue
+        if lens_value and "fov" in lens_value.lower():
+            extracted_focal = CatalogService._extract_focal_length_from_combined(
+                lens_value
+            )
+            lens_value = extracted_focal if extracted_focal else lens_value
 
-                    if isinstance(value, str):
-                        return value
-                    return str(value)
-            return None
+        fov_value = CatalogService._find_value_recursive(
+            specs,
+            "horizontal field of view",
+            "horizontal fov",
+            "fov",
+            "field of view",
+            "focal length & fov",
+        )
+
+        if fov_value and (
+            "focal length" in fov_value.lower()
+            or "field of view" in fov_value.lower()
+            or "vertical" in fov_value.lower()
+            or "diagonal" in fov_value.lower()
+        ):
+            extracted_fov = CatalogService._extract_horizontal_fov_from_combined(
+                fov_value
+            )
+            fov_value = extracted_fov if extracted_fov else None
 
         return CameraSpecsSummary(
-            max_resolution=get_value("max resolution", "resolution"),
-            lens=get_value("lens", "focal length"),
-            horizontal_fov=get_value("horizontal fov", "fov"),
+            max_resolution=max_resolution,
+            lens=lens_value,
+            horizontal_fov=fov_value,
         )
 
     @staticmethod
