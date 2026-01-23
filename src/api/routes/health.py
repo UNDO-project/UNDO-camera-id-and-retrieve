@@ -20,7 +20,7 @@ async def health_check() -> HealthResponse:
         curl http://localhost:8000/api/v1/health
         ```
     """
-    return HealthResponse(status="healthy", version="0.3.0")
+    return HealthResponse(status="healthy", version="0.5.1")
 
 
 @router.get("/health/ready", response_model=ReadinessResponse)
@@ -41,9 +41,11 @@ async def readiness_check() -> ReadinessResponse:
         curl http://localhost:8000/api/v1/health/ready
         ```
     """
-    is_ready = state.is_ready()
-
-    if not is_ready:
+    # Accessing state.service triggers lazy initialization
+    try:
+        service = state.service
+    except Exception:
+        # If service initialization fails, return not ready
         return ReadinessResponse(
             ready=False,
             catalog_loaded=False,
@@ -51,19 +53,14 @@ async def readiness_check() -> ReadinessResponse:
             detector_ready=False,
         )
 
-    # If service is initialized, check its components
-    service = state.service
-
     # Check if catalog is loaded (has catalog index)
-    catalog_loaded = (
-        hasattr(service, "catalog_index") and service.catalog_index is not None
-    )
+    catalog_loaded = hasattr(service, "index") and service.index is not None
 
     # Check if embeddings are ready
     embeddings_ready = (
         catalog_loaded
-        and hasattr(service.catalog_index, "embeddings")
-        and service.catalog_index.embeddings is not None
+        and hasattr(service.index, "embeddings")
+        and service.index.embeddings is not None
     )
 
     # Check if detector is loaded
