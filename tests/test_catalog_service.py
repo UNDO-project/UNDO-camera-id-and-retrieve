@@ -136,35 +136,6 @@ def test_build_thumbnail_url_without_prefix():
     assert url == "/api/v1/images/VENDOR/CATEGORY/camera.jpg"
 
 
-def test_build_datasheet_url_no_double_path():
-    """Test that datasheet URL does not contain double path prefix."""
-    service = CatalogService()
-
-    datasheet_file = "data/pdfs/HIKVISION/ITS/datasheet.pdf"
-    url = service._build_datasheet_url(datasheet_file)
-
-    assert url == "/api/v1/datasheets/HIKVISION/ITS/datasheet.pdf"
-    assert "data/pdfs/data/pdfs" not in url
-
-
-def test_build_datasheet_url_without_prefix():
-    """Test that datasheet URL works when path has no prefix."""
-    service = CatalogService()
-
-    datasheet_file = "VENDOR/datasheet.pdf"
-    url = service._build_datasheet_url(datasheet_file)
-
-    assert url == "/api/v1/datasheets/VENDOR/datasheet.pdf"
-
-
-def test_build_datasheet_url_none():
-    """Test that datasheet URL returns None for empty input."""
-    service = CatalogService()
-
-    url = service._build_datasheet_url(None)
-    assert url is None
-
-
 def test_flatten_specs_nested_lens_dict():
     """Test that nested lens dict extracts focal length correctly."""
     service = CatalogService()

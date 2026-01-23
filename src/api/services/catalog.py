@@ -236,18 +236,6 @@ class CatalogService:
         clean_path = image_file.removeprefix("data/images/")
         return f"/api/v1/images/{clean_path}"
 
-    @staticmethod
-    def _build_datasheet_url(datasheet_file: Optional[str]) -> Optional[str]:
-        r"""Build datasheet URL if file exists.
-
-        :param datasheet_file: Local PDF file path, may include data/pdfs/ prefix
-        :return: URL path for the datasheet endpoint, or None if no file
-        """
-        if not datasheet_file:
-            return None
-        clean_path = datasheet_file.removeprefix("data/pdfs/")
-        return f"/api/v1/datasheets/{clean_path}"
-
     def filter_cameras(
         self,
         vendor: Optional[str] = None,
@@ -356,7 +344,7 @@ class CatalogService:
             product_series=record.product_series,
             image_urls=image_urls,
             image_files=image_files,
-            datasheet_url=self._build_datasheet_url(record.datasheet_file),
+            datasheet_url=record.datasheet_url,
             specs=self._flatten_specs(record.specifications),
         )
 
