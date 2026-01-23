@@ -1,7 +1,8 @@
 """Catalog service for loading and querying camera data."""
 
 import json
-from typing import Optional
+import re
+from typing import Optional, Dict, List, Any, Tuple
 
 import pandas as pd
 from loguru import logger
@@ -37,7 +38,8 @@ class CatalogService:
             self._catalog = self._load_catalog()
         return self._catalog
 
-    def _load_catalog(self) -> pd.DataFrame:
+    @staticmethod
+    def _load_catalog() -> pd.DataFrame:
         r"""Load catalog from parquet file.
 
         :return: DataFrame with camera records
@@ -61,7 +63,8 @@ class CatalogService:
         self._catalog = None
         logger.info("Catalog cache cleared")
 
-    def _row_to_record(self, row: pd.Series) -> CameraRecord:
+    @staticmethod
+    def _row_to_record(row: pd.Series) -> CameraRecord:
         r"""Convert a DataFrame row to a CameraRecord.
 
         :param row: DataFrame row containing camera data
@@ -105,7 +108,76 @@ class CatalogService:
             product_series=row.get("product_series", ""),
         )
 
-    def _flatten_specs(self, specs: dict) -> Optional[CameraSpecsSummary]:
+    @staticmethod
+    def _find_value_recursive(data: Any, *key_patterns: str) -> Optional[str]:
+        r"""Recursively search for value matching any key pattern.
+
+        :param data: Dict or value to search
+        :param key_patterns: List of key patterns to match (case-insensitive)
+        :return: First matching value as string, or None
+        """
+        if isinstance(data, dict):
+            for key, value in data.items():
+                key_lower = key.lower()
+                for pattern in key_patterns:
+                    pattern_lower = pattern.lower()
+                    if pattern_lower in key_lower:
+                        if isinstance(value, dict):
+                            result = CatalogService._find_value_recursive(
+                                value, *key_patterns
+                            )
+                            if result:
+                                return result
+                        elif isinstance(value, str) and value not in ["–", "-"]:
+                            return value
+                        elif not isinstance(value, dict):
+                            return str(value)
+                        return None
+
+            for value in data.values():
+                result = CatalogService._find_value_recursive(value, *key_patterns)
+                if result:
+                    return result
+        return None
+
+    @staticmethod
+    def _extract_focal_length_from_combined(value: str) -> Optional[str]:
+        r"""Extract focal length from combined 'Focal Length & FOV' string.
+
+        :param value: Combined string like '2.8 mm, horizontal FOV 100.2°'
+        :return: Focal length part only, or None if not found
+        """
+        if not value:
+            return None
+
+        match = re.search(
+            r"[\d.,]+\s*mm(?:\s*to\s*[\d.,]+\s*mm)?", value, re.IGNORECASE
+        )
+        if match:
+            return match.group(0).strip()
+        return None
+
+    @staticmethod
+    def _extract_horizontal_fov_from_combined(value: str) -> Optional[str]:
+        r"""Extract horizontal FOV from combined 'Focal Length & FOV' string.
+
+        :param value: Combined string like '2.8 mm, horizontal FOV 100.2°'
+        :return: Horizontal FOV part only, or None if not found
+        """
+        if not value:
+            return None
+
+        match = re.search(
+            r"horizontal\s+(?:field\s+of\s+view\s*:?\s*)?([\d.,]+\s*°?\s*(?:to\s*[\d.,]+\s*°?)?)",
+            value,
+            re.IGNORECASE,
+        )
+        if match:
+            return match.group(1)
+        return None
+
+    @staticmethod
+    def _flatten_specs(specs: Dict[str, Any]) -> Optional[CameraSpecsSummary]:
         r"""Extract commonly-used fields from specifications dict.
 
         :param specs: Full specifications dictionary
@@ -114,41 +186,55 @@ class CatalogService:
         if not specs:
             return None
 
-        spec_lower = {k.lower(): v for k, v in specs.items()}
-
-        def get_value(*keys: str) -> Optional[str]:
-            for key in keys:
-                key_lower = key.lower()
-                if key_lower in spec_lower:
-                    value = spec_lower[key_lower]
-                    if isinstance(value, str):
-                        return value
-                    return str(value)
-            return None
-
-        return CameraSpecsSummary(
-            max_resolution=get_value("max resolution", "resolution"),
-            lens=get_value("lens", "focal length"),
-            horizontal_fov=get_value("horizontal fov", "fov"),
+        max_resolution = CatalogService._find_value_recursive(
+            specs, "max resolution", "max. resolution", "resolution", "video resolution"
         )
 
-    def _build_thumbnail_url(self, image_file: str) -> str:
+        lens_value = CatalogService._find_value_recursive(
+            specs, "focal length", "lens", "focal length & fov"
+        )
+
+        if lens_value and "fov" in lens_value.lower():
+            extracted_focal = CatalogService._extract_focal_length_from_combined(
+                lens_value
+            )
+            lens_value = extracted_focal if extracted_focal else lens_value
+
+        fov_value = CatalogService._find_value_recursive(
+            specs,
+            "horizontal field of view",
+            "horizontal fov",
+            "fov",
+            "field of view",
+            "focal length & fov",
+        )
+
+        if fov_value and (
+            "focal length" in fov_value.lower()
+            or "field of view" in fov_value.lower()
+            or "vertical" in fov_value.lower()
+            or "diagonal" in fov_value.lower()
+        ):
+            extracted_fov = CatalogService._extract_horizontal_fov_from_combined(
+                fov_value
+            )
+            fov_value = extracted_fov if extracted_fov else None
+
+        return CameraSpecsSummary(
+            max_resolution=max_resolution,
+            lens=lens_value,
+            horizontal_fov=fov_value,
+        )
+
+    @staticmethod
+    def _build_thumbnail_url(image_file: str) -> str:
         r"""Build thumbnail URL for an image file.
 
-        :param image_file: Local file path relative to project root
+        :param image_file: Local file path, may include data/images/ prefix
         :return: URL path for the image endpoint
         """
-        return f"/api/v1/images/{image_file}"
-
-    def _build_datasheet_url(self, datasheet_file: Optional[str]) -> Optional[str]:
-        r"""Build datasheet URL if file exists.
-
-        :param datasheet_file: Local PDF file path
-        :return: URL path for the datasheet endpoint, or None if no file
-        """
-        if not datasheet_file:
-            return None
-        return f"/api/v1/datasheets/{datasheet_file}"
+        clean_path = image_file.removeprefix("data/images/")
+        return f"/api/v1/images/{clean_path}"
 
     def filter_cameras(
         self,
@@ -158,7 +244,7 @@ class CatalogService:
         search: Optional[str] = None,
         page: int = 1,
         limit: int = 20,
-    ) -> tuple[list[CameraSummaryResponse], int]:
+    ) -> Tuple[List[CameraSummaryResponse], int]:
         r"""Filter cameras with pagination.
 
         :param vendor: Filter by source/vendor
@@ -246,7 +332,7 @@ class CatalogService:
         record = self._row_to_record(row.iloc[0])
 
         image_urls = [url for url in record.images if url and url.startswith("http")]
-        image_files = [f"/api/v1/images/{f}" for f in record.image_files]
+        image_files = [self._build_thumbnail_url(f) for f in record.image_files]
 
         return CameraDetailResponse(
             camera_id=record.camera_id,
@@ -258,11 +344,11 @@ class CatalogService:
             product_series=record.product_series,
             image_urls=image_urls,
             image_files=image_files,
-            datasheet_url=self._build_datasheet_url(record.datasheet_file),
+            datasheet_url=record.datasheet_url,
             specs=self._flatten_specs(record.specifications),
         )
 
-    def get_facets(self) -> dict:
+    def get_facets(self) -> Dict[str, Any]:
         r"""Get available filter options with counts.
 
         :return: Dictionary with vendors, categories, and series facets
@@ -294,43 +380,43 @@ class CatalogService:
             "series": series_facets,
         }
 
+    @staticmethod
+    def load_catalog(self) -> pd.DataFrame:
+        r"""Load catalog from parquet file.
 
-def load_catalog() -> pd.DataFrame:
-    r"""Load catalog from parquet file.
+        .. deprecated::
+            Use :meth:`CatalogService.catalog` instead for proper lifecycle control.
 
-    .. deprecated::
-        Use :meth:`CatalogService.catalog` instead for proper lifecycle control.
+        :return: DataFrame with camera records
+        :raises FileNotFoundError: If dataset parquet file does not exist
+        """
+        service = CatalogService()
+        return service.catalog
 
-    :return: DataFrame with camera records
-    :raises FileNotFoundError: If dataset parquet file does not exist
-    """
-    service = CatalogService()
-    return service.catalog
+    @staticmethod
+    def get_camera_by_id(camera_id: str) -> Optional[CameraRecord]:
+        r"""Get a single camera record by ID.
 
+        .. deprecated::
+            Use :meth:`CatalogService.get_camera_detail` instead.
 
-def get_camera_by_id(camera_id: str) -> Optional[CameraRecord]:
-    r"""Get a single camera record by ID.
+        :param camera_id: Unique camera identifier
+        :return: CameraRecord if found, None otherwise
+        """
+        service = CatalogService()
+        return service._row_to_record(
+            service.catalog[service.catalog["camera_id"] == camera_id].iloc[0]
+        )
 
-    .. deprecated::
-        Use :meth:`CatalogService.get_camera_detail` instead.
+    @staticmethod
+    def flatten_specs(specs: Dict[str, Any]) -> Optional[CameraSpecsSummary]:
+        r"""Extract commonly-used fields from specifications dict.
 
-    :param camera_id: Unique camera identifier
-    :return: CameraRecord if found, None otherwise
-    """
-    service = CatalogService()
-    return service._row_to_record(
-        service.catalog[service.catalog["camera_id"] == camera_id].iloc[0]
-    )
+        .. deprecated::
+            Use :meth:`CatalogService._flatten_specs` instead.
 
-
-def flatten_specs(specs: dict) -> Optional[CameraSpecsSummary]:
-    r"""Extract commonly-used fields from specifications dict.
-
-    .. deprecated::
-        Use :meth:`CatalogService._flatten_specs` instead.
-
-    :param specs: Full specifications dictionary
-    :return: CameraSpecsSummary with flattened fields, None if specs is empty
-    """
-    service = CatalogService()
-    return service._flatten_specs(specs)
+        :param specs: Full specifications dictionary
+        :return: CameraSpecsSummary with flattened fields, None if specs is empty
+        """
+        service = CatalogService()
+        return service._flatten_specs(specs)

@@ -81,7 +81,6 @@ class FakeIdentificationService:
         self.detector = FakeDetector()
         self.index = FakeCatalogIndex()
         self.catalog = _make_fake_catalog()
-        self.catalog_index = self.index  # Alias for health check compatibility
 
     def identify_from_image(
         self,
