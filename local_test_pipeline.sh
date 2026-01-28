@@ -60,6 +60,11 @@ pytest tests/test_identification_service.py -v
 echo "Done..."
 echo "==============================================="
 
+echo "Running identification async wrapper service tests"
+pytest tests/test_async_identification.py -v
+echo "Done..."
+echo "==============================================="
+
 echo "Running catalog service tests"
 pytest tests/test_catalog_service.py -v
 echo "Done..."
