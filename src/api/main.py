@@ -31,6 +31,15 @@ async def lifespan(app: FastAPI):
     # Shutdown
     logger.info("Shutting down cIDaR API server...")
 
+    # Import here to avoid circular dependency
+    from src.api.dependencies import state
+
+    # Shutdown connection manager if it was initialized
+    if state._connection_manager is not None:
+        await state._connection_manager.shutdown()
+
+    logger.info("Shutdown complete")
+
 
 class CORSMiddlewareStaticFiles(StaticFiles):
     """StaticFiles middleware with CORS headers for cross-origin image access.
@@ -129,10 +138,9 @@ app.include_router(catalog.router, prefix="/api/v1/catalog", tags=["catalog"])
 
 @app.get("/")
 async def root() -> Dict[str, Any]:
-    """Root endpoint.
+    r"""Root endpoint.
 
-    Returns:
-        Dict[str, Any]: Welcome message and API information
+    :return: Welcome message and API information
     """
     return {
         "message": "cIDaR - Camera Identification and Research API",

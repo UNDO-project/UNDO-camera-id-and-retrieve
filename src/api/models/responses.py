@@ -1,7 +1,7 @@
 """API response models."""
 
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 
 from src.models.identification import RetrievalResult
 
@@ -43,6 +43,9 @@ class ReadinessResponse(BaseModel):
     catalog_loaded: bool = Field(..., description="Whether catalog is loaded")
     embeddings_ready: bool = Field(..., description="Whether embeddings are ready")
     detector_ready: bool = Field(..., description="Whether detector model is loaded")
+    websocket_connections: Optional[Dict[str, Any]] = Field(
+        None, description="WebSocket connection statistics (if initialized)"
+    )
 
 
 class ErrorResponse(BaseModel):

@@ -28,22 +28,17 @@ async def identify_camera(
     ),
     service: IdentificationService = Depends(get_identification_service),
 ) -> IdentifyResponse:
-    """Identify cameras in an uploaded image.
+    r"""Identify cameras in an uploaded image.
 
     This endpoint accepts an image file, detects cameras using YOLOv8,
     and retrieves the most similar cameras from the catalog using CLIP embeddings.
 
-    Args:
-        image: The image file to analyze (JPEG, PNG)
-        top_k: Maximum number of matches to return per detection
-        min_similarity: Minimum cosine similarity score for matches
-        service: Injected identification service
-
-    Returns:
-        IdentifyResponse: Detection results with matched cameras
-
-    Raises:
-        HTTPException: If image processing fails
+    :param image: The image file to analyze (JPEG, PNG)
+    :param top_k: Maximum number of matches to return per detection
+    :param min_similarity: Minimum cosine similarity score for matches
+    :param service: Injected identification service
+    :return: Detection results with matched cameras
+    :raises HTTPException: If image processing fails
 
     Example:
         ```bash

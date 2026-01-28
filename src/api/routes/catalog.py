@@ -24,18 +24,15 @@ router = APIRouter()
 async def get_catalog_stats(
     service: IdentificationService = Depends(get_identification_service),
 ) -> CatalogStatsResponse:
-    """Get catalog statistics.
+    r"""Get catalog statistics.
 
     Returns information about the loaded catalog including:
     - Total number of cameras
     - Embeddings status
     - Catalog file path
 
-    Args:
-        service: Injected identification service
-
-    Returns:
-        CatalogStatsResponse: Catalog statistics
+    :param service: Injected identification service
+    :return: Catalog statistics
 
     Example:
         ```bash
@@ -95,20 +92,19 @@ async def get_catalog_stats(
 
 @router.post("/reload")
 async def reload_catalog() -> Dict[str, Any]:
-    """Reload the catalog and embeddings.
+    r"""Reload the catalog and embeddings.
 
     This is an admin endpoint that forces reinitialization of the
     IdentificationService, reloading the catalog from disk.
 
-    Returns:
-        Dict[str, Any]: Success status and message
+    :return: Success status and message
 
     Example:
         ```bash
         curl -X POST http://localhost:8000/api/v1/catalog/reload
         ```
 
-    Note:
+    .. note::
         This operation may take several seconds depending on catalog size.
         Consider adding authentication to this endpoint in production.
     """
@@ -146,8 +142,7 @@ async def list_cameras(
     :param series: Filter by product series
     :param search: Search query for model_name and display_name
     :param catalog_service: Injected catalog service
-
-    :returns: CatalogListResponse with cameras and pagination info
+    :return: CatalogListResponse with cameras and pagination info
 
     Example:
         ```bash
@@ -196,8 +191,7 @@ async def get_camera(
 
     :param camera_id: Unique camera identifier
     :param catalog_service: Injected catalog service
-
-    :returns: CameraDetailResponse with full camera details
+    :return: CameraDetailResponse with full camera details
 
     Example:
         ```bash
@@ -231,8 +225,7 @@ async def get_catalog_facets(
     to support UI filter rendering.
 
     :param catalog_service: Injected catalog service
-
-    :returns: CatalogFacetsResponse with filter options and counts
+    :return: CatalogFacetsResponse with filter options and counts
 
     Example:
         ```bash

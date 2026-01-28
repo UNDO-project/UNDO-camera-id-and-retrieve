@@ -6,14 +6,11 @@ from loguru import logger
 
 
 async def generic_exception_handler(_request, exc: Exception) -> JSONResponse:
-    """Handle generic exceptions.
+    r"""Handle generic exceptions.
 
-    Args:
-        _request: The incoming request (unused, required by FastAPI signature)
-        exc: The exception that was raised
-
-    Returns:
-        JSONResponse: Error response
+    :param _request: The incoming request (unused, required by FastAPI signature)
+    :param exc: The exception that was raised
+    :return: Error response
     """
     logger.error(f"Unhandled exception: {exc}", exc_info=True)
 
@@ -28,14 +25,11 @@ async def generic_exception_handler(_request, exc: Exception) -> JSONResponse:
 
 
 async def validation_exception_handler(_request, exc: Exception) -> JSONResponse:
-    """Handle validation exceptions.
+    r"""Handle validation exceptions.
 
-    Args:
-        _request: The incoming request (unused, required by FastAPI signature)
-        exc: The validation exception
-
-    Returns:
-        JSONResponse: Error response with validation details
+    :param _request: The incoming request (unused, required by FastAPI signature)
+    :param exc: The validation exception
+    :return: Error response with validation details
     """
     logger.warning(f"Validation error: {exc}")
 
