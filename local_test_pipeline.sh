@@ -100,6 +100,11 @@ pytest tests/test_video_stream.py -v
 echo "Done..."
 echo "==============================================="
 
+echo "Running API frame buffer tests"
+pytest tests/test_frame_buffer.py -v
+echo "Done..."
+echo "==============================================="
+
 echo ""
 echo "=========================================="
 echo "All individual tests completed!"
