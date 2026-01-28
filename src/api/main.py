@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from loguru import logger
 
 from src.api.config import settings
-from src.api.routes import health, identification, catalog
+from src.api.routes import health, identification, catalog, video_stream
 from src.api.exceptions import generic_exception_handler
 from src.config import paths
 
@@ -134,6 +134,7 @@ app.add_exception_handler(Exception, generic_exception_handler)
 app.include_router(health.router, prefix="/api/v1", tags=["health"])
 app.include_router(identification.router, prefix="/api/v1", tags=["identification"])
 app.include_router(catalog.router, prefix="/api/v1/catalog", tags=["catalog"])
+app.include_router(video_stream.router, prefix="/api/v1/ws", tags=["video-streaming"])
 
 
 @app.get("/")

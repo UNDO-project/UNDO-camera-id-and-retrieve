@@ -95,6 +95,11 @@ pytest tests/test_connection_manager.py -v
 echo "Done..."
 echo "==============================================="
 
+echo "Running API video stream endpoint tests"
+pytest tests/test_video_stream.py -v
+echo "Done..."
+echo "==============================================="
+
 echo ""
 echo "=========================================="
 echo "All individual tests completed!"
