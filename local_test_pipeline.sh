@@ -90,6 +90,11 @@ pytest tests/test_api_middleware.py -v
 echo "Done..."
 echo "==============================================="
 
+echo "Running API connection manager tests"
+pytest tests/test_connection_manager.py -v
+echo "Done..."
+echo "==============================================="
+
 echo ""
 echo "=========================================="
 echo "All individual tests completed!"
