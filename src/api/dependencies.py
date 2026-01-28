@@ -6,6 +6,7 @@ from loguru import logger
 
 from src.identification.service import IdentificationService
 from src.api.services.catalog import CatalogService
+from src.api.websocket.manager import ConnectionManager
 
 
 class ServiceState:
@@ -19,13 +20,13 @@ class ServiceState:
         """Initialize the service state."""
         self._service: Optional[IdentificationService] = None
         self._catalog_service: Optional[CatalogService] = None
+        self._connection_manager: Optional[ConnectionManager] = None
 
     @property
     def service(self) -> IdentificationService:
-        """Get or initialize the identification service.
+        r"""Get or initialize the identification service.
 
-        Returns:
-            IdentificationService: The identification service instance.
+        :return: The identification service instance
         """
         if self._service is None:
             logger.info("Initializing IdentificationService...")
@@ -35,16 +36,27 @@ class ServiceState:
 
     @property
     def catalog_service(self) -> CatalogService:
-        """Get or initialize the catalog service.
+        r"""Get or initialize the catalog service.
 
-        Returns:
-            CatalogService: The catalog service instance.
+        :return: The catalog service instance
         """
         if self._catalog_service is None:
             logger.info("Initializing CatalogService...")
             self._catalog_service = CatalogService()
             logger.success("CatalogService initialized successfully")
         return self._catalog_service
+
+    @property
+    def connection_manager(self) -> ConnectionManager:
+        r"""Get or initialize the connection manager.
+
+        :return: The connection manager instance
+        """
+        if self._connection_manager is None:
+            logger.info("Initializing ConnectionManager...")
+            self._connection_manager = ConnectionManager()
+            logger.success("ConnectionManager initialized successfully")
+        return self._connection_manager
 
     def reload_catalog(self) -> None:
         """Reload the catalog and embeddings.
@@ -77,10 +89,9 @@ state = ServiceState()
 
 
 def get_identification_service() -> IdentificationService:
-    """FastAPI dependency to inject the identification service.
+    r"""FastAPI dependency to inject the identification service.
 
-    Returns:
-        IdentificationService: The shared identification service instance.
+    :return: The shared identification service instance
 
     Example:
         ```python
@@ -94,10 +105,9 @@ def get_identification_service() -> IdentificationService:
 
 
 def get_catalog_service() -> CatalogService:
-    """FastAPI dependency to inject the catalog service.
+    r"""FastAPI dependency to inject the catalog service.
 
-    Returns:
-        CatalogService: The shared catalog service instance.
+    :return: The shared catalog service instance
 
     Example:
         ```python
@@ -109,3 +119,21 @@ def get_catalog_service() -> CatalogService:
         ```
     """
     return state.catalog_service
+
+
+def get_connection_manager() -> ConnectionManager:
+    r"""FastAPI dependency to inject the connection manager.
+
+    :return: The shared connection manager instance
+
+    Example:
+        ```python
+        @app.websocket("/ws/video-stream")
+        async def video_stream(
+            websocket: WebSocket,
+            manager: ConnectionManager = Depends(get_connection_manager)
+        ):
+            await manager.connect(websocket, client_id, config)
+        ```
+    """
+    return state.connection_manager

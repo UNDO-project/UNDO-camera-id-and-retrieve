@@ -10,10 +10,9 @@ router = APIRouter()
 
 @router.get("/health", response_model=HealthResponse)
 async def health_check() -> HealthResponse:
-    """Basic health check endpoint.
+    r"""Basic health check endpoint.
 
-    Returns:
-        HealthResponse: Service health status.
+    :return: Service health status
 
     Example:
         ```bash
@@ -25,7 +24,7 @@ async def health_check() -> HealthResponse:
 
 @router.get("/health/ready", response_model=ReadinessResponse)
 async def readiness_check() -> ReadinessResponse:
-    """Readiness check endpoint.
+    r"""Readiness check endpoint.
 
     Checks if the service is fully initialized and ready to handle requests.
     This includes:
@@ -33,8 +32,7 @@ async def readiness_check() -> ReadinessResponse:
     - Embeddings available
     - Detector model loaded
 
-    Returns:
-        ReadinessResponse: Detailed readiness status.
+    :return: Detailed readiness status
 
     Example:
         ```bash
@@ -68,9 +66,15 @@ async def readiness_check() -> ReadinessResponse:
 
     ready = catalog_loaded and embeddings_ready and detector_ready
 
+    # Include WebSocket connection stats if connection manager is initialized
+    connection_stats = None
+    if state._connection_manager is not None:
+        connection_stats = state._connection_manager.get_connection_stats()
+
     return ReadinessResponse(
         ready=ready,
         catalog_loaded=catalog_loaded,
         embeddings_ready=embeddings_ready,
         detector_ready=detector_ready,
+        websocket_connections=connection_stats,
     )
