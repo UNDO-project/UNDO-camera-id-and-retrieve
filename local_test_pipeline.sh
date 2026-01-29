@@ -110,6 +110,11 @@ pytest tests/test_video_stream_integration.py -v
 echo "Done..."
 echo "==============================================="
 
+echo "Running API video stream configuration tests"
+pytest tests/test_stream_config.py -v
+echo "Done..."
+echo "==============================================="
+
 echo "Running API video upload endpoints tests"
 pytest tests/test_video_upload.py -v
 echo "Done..."
