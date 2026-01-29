@@ -1,11 +1,12 @@
 """Video upload and processing endpoints."""
 
+import asyncio
 import json
 import uuid
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from loguru import logger
 
@@ -17,6 +18,7 @@ from src.api.models.video import (
     VideoValidationResult,
 )
 from src.api.tasks.store import task_store
+from src.api.tasks.video_processor import run_video_processing_task
 from src.config import paths
 
 router = APIRouter()
@@ -144,6 +146,7 @@ def _validate_video_metadata(
 
 @router.post("/process-video", response_model=VideoUploadResponse, status_code=202)
 async def upload_video(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(..., description="Video file to process"),
     options: Optional[str] = Form(
         default=None,
@@ -156,6 +159,7 @@ async def upload_video(
     camera detection and optional identification. The video will be processed
     in the background and the results can be retrieved using the task ID.
 
+    :param background_tasks: FastAPI BackgroundTasks object for scheduling tasks
     :param file: Video file to process (MP4, AVI, MOV, WebM)
     :param options: JSON string with processing options
     :return: Task information with unique ID for tracking progress
@@ -243,6 +247,19 @@ async def upload_video(
         f"(file={filename}, frames={validation.total_frames}, "
         f"duration={validation.duration_seconds}s, mode={processing_options.identification_mode})"
     )
+
+    # Schedule background processing task
+    # Using asyncio.create_task wrapped in a sync function for BackgroundTasks
+    def _run_async_task():
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(run_video_processing_task(task_id))
+        finally:
+            loop.close()
+
+    background_tasks.add_task(_run_async_task)
+    logger.info(f"Scheduled background processing for task: {task_id}")
 
     return VideoUploadResponse(
         task_id=task_id,
