@@ -115,6 +115,11 @@ pytest tests/test_video_upload.py -v
 echo "Done..."
 echo "==============================================="
 
+echo "Running video processing background tests"
+pytest tests/test_video_processor.py -v
+echo "Done..."
+echo "==============================================="
+
 echo "Running API frame buffer tests"
 pytest tests/test_frame_buffer.py -v
 echo "Done..."
