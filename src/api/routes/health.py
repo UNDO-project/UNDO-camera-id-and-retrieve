@@ -23,7 +23,7 @@ async def health_check() -> HealthResponse:
         curl http://localhost:8000/api/v1/health
         ```
     """
-    return HealthResponse(status="healthy", version="0.5.1")
+    return HealthResponse(status="healthy", version="0.6.0")
 
 
 @router.get("/health/ready", response_model=ReadinessResponse)
