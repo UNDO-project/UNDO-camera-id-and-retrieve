@@ -34,7 +34,7 @@ class BoundingBox(BaseModel):
 class CameraDetection(BaseModel):
     r"""Single camera detection in an image.
 
-    :ivar image_path: Path to the original input image
+    :ivar image_path: Path to the original input image (None for in-memory frames)
     :ivar crop_path: Optional path to the cropped detection patch
     :ivar bbox: Bounding box for the detection
     :ivar confidence: Detection confidence score (0.0-1.0)
@@ -42,7 +42,9 @@ class CameraDetection(BaseModel):
     :ivar class_id: Optional numeric class identifier from the detector
     """
 
-    image_path: Path = Field(..., description="Path to the original input image")
+    image_path: Optional[Path] = Field(
+        None, description="Path to the original input image (None for in-memory frames)"
+    )
     crop_path: Optional[Path] = Field(
         None, description="Optional path to the cropped detection patch"
     )

@@ -65,6 +65,11 @@ pytest tests/test_async_identification.py -v
 echo "Done..."
 echo "==============================================="
 
+echo "Running frame annotation renderer tests"
+pytest tests/test_renderer.py -v
+echo "Done..."
+echo "==============================================="
+
 echo "Running catalog service tests"
 pytest tests/test_catalog_service.py -v
 echo "Done..."
