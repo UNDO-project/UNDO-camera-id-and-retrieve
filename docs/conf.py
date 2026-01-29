@@ -9,11 +9,17 @@
 
 from pathlib import Path
 import sys
+import importlib.metadata
 
 project = "CCTV Identification and Research (cIDaR)"
 copyright = "2025, jethronap"
 author = "jethronap"
-release = "0.5.0"
+
+try:
+    release = importlib.metadata.version("cctv-identification-and-research")
+except importlib.metadata.PackageNotFoundError:
+    # Fallback for environments where the package isn't installed
+    release = "0.0.0"
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration

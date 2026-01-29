@@ -58,6 +58,21 @@ Stage 2 – Build dataset
    :show-inheritance:
    :noindex:
 
+Manifest reconstruction (recovery)
+----------------------------------
+
+.. automodule:: src.building.manifest_reconstruction
+   :members:
+   :undoc-members:
+   :show-inheritance:
+   :noindex:
+
+.. automodule:: src.building.reconstruct_cli
+   :members: main
+   :undoc-members:
+   :show-inheritance:
+   :noindex:
+
 Stage 3 – Validate dataset
 --------------------------
 

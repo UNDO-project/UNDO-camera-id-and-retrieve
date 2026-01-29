@@ -11,3 +11,4 @@ the pipeline and identification sections.
    api_scrapers
    api_storage
    api_identification
+   api_server
