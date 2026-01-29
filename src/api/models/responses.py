@@ -82,6 +82,9 @@ class StreamStatsResponse(BaseModel):
     total_connections_served: int = Field(
         ..., description="Total connections served since startup"
     )
+    total_frames_received: int = Field(
+        ..., description="Total frames received since startup"
+    )
     total_frames_processed: int = Field(
         ..., description="Total frames processed since startup"
     )
