@@ -2,7 +2,7 @@
 
 import threading
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Literal, Optional
 
@@ -37,7 +37,7 @@ class TaskProgress:
     file_size_mb: float = 0.0
     input_path: Optional[Path] = None
     output_path: Optional[Path] = None
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     frames_processed: int = 0
@@ -66,7 +66,7 @@ class TaskProgress:
         """
         if self.started_at is None:
             return 0.0
-        end_time = self.completed_at or datetime.utcnow()
+        end_time = self.completed_at or datetime.now(timezone.utc)
         return (end_time - self.started_at).total_seconds()
 
     def update(self, frames_processed: int, frames_total: int) -> None:
@@ -85,7 +85,7 @@ class TaskProgress:
     def start(self) -> None:
         r"""Mark the task as started."""
         self.status = "processing"
-        self.started_at = datetime.utcnow()
+        self.started_at = datetime.now(timezone.utc)
 
     def complete(self, output_path: Path) -> None:
         r"""Mark the task as completed.
@@ -94,7 +94,7 @@ class TaskProgress:
         """
         self.status = "completed"
         self.output_path = output_path
-        self.completed_at = datetime.utcnow()
+        self.completed_at = datetime.now(timezone.utc)
         self.frames_processed = self.frames_total
 
     def fail(self, error: str) -> None:
@@ -104,7 +104,7 @@ class TaskProgress:
         """
         self.status = "failed"
         self.error = error
-        self.completed_at = datetime.utcnow()
+        self.completed_at = datetime.now(timezone.utc)
 
 
 class TaskStore:
@@ -184,7 +184,7 @@ class TaskStore:
         :param max_age_hours: Maximum age of tasks to keep in hours
         :return: Number of tasks removed
         """
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         max_age_seconds = max_age_hours * 3600
         removed = 0
 
