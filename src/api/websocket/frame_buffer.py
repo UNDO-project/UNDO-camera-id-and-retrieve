@@ -3,6 +3,7 @@
 import asyncio
 import time
 from dataclasses import dataclass, field
+from io import BytesIO
 from typing import Optional
 
 
@@ -13,6 +14,13 @@ class FrameData:
     frame_bytes: bytes
     timestamp: float
     frame_number: int
+
+    def as_bytes_io(self) -> BytesIO:
+        r"""Convert frame bytes to BytesIO for PIL Image loading.
+
+        :return: BytesIO object containing frame data
+        """
+        return BytesIO(self.frame_bytes)
 
 
 @dataclass
@@ -186,6 +194,10 @@ class FrameBuffer:
         :param target_fps: Target processing rate
         :return: True if frame should be skipped
         """
+        # Never skip if we haven't processed any frames yet
+        if current_fps == 0.0:
+            return False
+
         # Never skip if processing faster than target
         if current_fps >= target_fps:
             return False

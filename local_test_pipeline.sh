@@ -105,13 +105,18 @@ pytest tests/test_connection_manager.py -v
 echo "Done..."
 echo "==============================================="
 
-echo "Running API video stream endpoint tests"
-pytest tests/test_video_stream.py -v
+echo "Running API video stream integration tests"
+pytest tests/test_video_stream_integration.py -v
 echo "Done..."
 echo "==============================================="
 
 echo "Running API frame buffer tests"
 pytest tests/test_frame_buffer.py -v
+echo "Done..."
+echo "==============================================="
+
+echo "Running frame per second tracker tests"
+pytest tests/test_fps_tracker.py -v
 echo "Done..."
 echo "==============================================="
 
