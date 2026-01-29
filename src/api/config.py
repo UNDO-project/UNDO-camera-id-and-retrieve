@@ -68,5 +68,34 @@ class VideoUploadSettings(BaseSettings):
     task_cleanup_hours: int = 24
 
 
+class VideoStreamSettings(BaseSettings):
+    """Video streaming WebSocket configuration settings."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="CIDAR_STREAM_",
+        case_sensitive=False,
+    )
+
+    # Connection limits
+    max_connections: int = 5
+
+    # FPS settings
+    max_fps: int = 30
+    default_fps: int = 15
+
+    # Timeout settings
+    frame_timeout_seconds: float = 5.0
+    connection_timeout_seconds: int = 30
+
+    # Buffer settings
+    input_buffer_size: int = 10
+    output_buffer_size: int = 10
+
+    # Frame settings
+    jpeg_quality: int = 85
+    max_frame_size_mb: float = 5.0
+
+
 settings = APISettings()
 video_settings = VideoUploadSettings()
+stream_settings = VideoStreamSettings()

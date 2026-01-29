@@ -1,8 +1,12 @@
 """Health check endpoints."""
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
-from src.api.models.responses import HealthResponse, ReadinessResponse
+from src.api.models.responses import (
+    HealthResponse,
+    ReadinessResponse,
+    StreamStatsResponse,
+)
 from src.api.dependencies import state
 
 router = APIRouter()
@@ -77,4 +81,40 @@ async def readiness_check() -> ReadinessResponse:
         embeddings_ready=embeddings_ready,
         detector_ready=detector_ready,
         websocket_connections=connection_stats,
+    )
+
+
+@router.get("/stream/stats", response_model=StreamStatsResponse)
+async def stream_stats() -> StreamStatsResponse:
+    r"""Get video streaming statistics.
+
+    Returns statistics about active WebSocket connections, including
+    connection counts, frame processing metrics, and per-connection details.
+
+    :return: Stream statistics
+    :raises HTTPException: If connection manager not initialized
+
+    Example:
+        ```bash
+        curl http://localhost:8000/api/v1/stream/stats
+        ```
+    """
+    if state._connection_manager is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Stream manager not initialized. No streams have connected yet.",
+        )
+
+    stats = state._connection_manager.get_connection_stats()
+
+    return StreamStatsResponse(
+        active_connections=stats["active_connections"],
+        max_connections=stats["max_connections"],
+        total_connections_served=stats["total_connections_served"],
+        total_frames_received=stats["total_frames_received"],
+        total_frames_processed=stats["total_frames_processed"],
+        total_frames_dropped=stats["total_frames_dropped"],
+        average_fps=stats["average_fps"],
+        average_latency_ms=stats["average_latency_ms"],
+        connections=stats["connections"],
     )
