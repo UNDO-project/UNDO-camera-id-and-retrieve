@@ -5,6 +5,7 @@ from typing import Optional
 from loguru import logger
 
 from src.identification.service import IdentificationService
+from src.identification.async_service import AsyncIdentificationService
 from src.api.services.catalog import CatalogService
 from src.api.websocket.manager import ConnectionManager
 
@@ -19,6 +20,7 @@ class ServiceState:
     def __init__(self):
         """Initialize the service state."""
         self._service: Optional[IdentificationService] = None
+        self._async_service: Optional[AsyncIdentificationService] = None
         self._catalog_service: Optional[CatalogService] = None
         self._connection_manager: Optional[ConnectionManager] = None
 
@@ -33,6 +35,18 @@ class ServiceState:
             self._service = IdentificationService()
             logger.success("IdentificationService initialized successfully")
         return self._service
+
+    @property
+    def async_service(self) -> AsyncIdentificationService:
+        r"""Get or initialize the async identification service.
+
+        :return: The async identification service instance
+        """
+        if self._async_service is None:
+            logger.info("Initializing AsyncIdentificationService...")
+            self._async_service = AsyncIdentificationService()
+            logger.success("AsyncIdentificationService initialized successfully")
+        return self._async_service
 
     @property
     def catalog_service(self) -> CatalogService:
@@ -119,6 +133,24 @@ def get_catalog_service() -> CatalogService:
         ```
     """
     return state.catalog_service
+
+
+def get_async_identification_service() -> AsyncIdentificationService:
+    r"""FastAPI dependency to inject the async identification service.
+
+    :return: The shared async identification service instance
+
+    Example:
+        ```python
+        @app.websocket("/ws/video-stream")
+        async def video_stream(
+            websocket: WebSocket,
+            service: AsyncIdentificationService = Depends(get_async_identification_service)
+        ):
+            detections = await service.detect_frame(frame_bytes)
+        ```
+    """
+    return state.async_service
 
 
 def get_connection_manager() -> ConnectionManager:
