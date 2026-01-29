@@ -6,6 +6,8 @@
 CCTV Identification and Research (cIDaR)
 =========================================
 
+**Release:** |release|
+
 .. raw:: html
 
    <p>
