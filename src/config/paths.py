@@ -18,6 +18,8 @@ class PathSettings(BaseSettings):
     pdfs_dir_name: str = "pdfs"
     output_dir_name: str = "output"
     models_dir_name: str = "model_weights"
+    video_uploads_dir_name: str = "video_uploads"
+    video_outputs_dir_name: str = "video_outputs"
     yolo_weights_filename: str = "yolov8_camera.pt"
     yolo_camera_weights: Optional[Path] = None
 
@@ -50,6 +52,18 @@ class PathSettings(BaseSettings):
     def models_dir(self) -> Path:
         """Model weights directory path."""
         return self.project_root / self.models_dir_name
+
+    @computed_field
+    @property
+    def video_uploads_dir(self) -> Path:
+        """Video uploads directory path."""
+        return self.output_dir / self.video_uploads_dir_name
+
+    @computed_field
+    @property
+    def video_outputs_dir(self) -> Path:
+        """Processed video outputs directory path."""
+        return self.output_dir / self.video_outputs_dir_name
 
     @computed_field
     @property
@@ -90,3 +104,5 @@ class PathSettings(BaseSettings):
         self.pdfs_dir.mkdir(exist_ok=True)
         self.output_dir.mkdir(exist_ok=True)
         self.models_dir.mkdir(exist_ok=True)
+        self.video_uploads_dir.mkdir(exist_ok=True)
+        self.video_outputs_dir.mkdir(exist_ok=True)
