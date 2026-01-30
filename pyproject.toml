@@ -1,6 +1,6 @@
 [project]
 name = "cctv-identification-and-research"
-version = "0.6.0"
+version = "0.6.1"
 description = "A pipeline to scrape cctv data and identify given cameras in urban settings."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -31,6 +31,7 @@ dependencies = [
     "torch>=2.9.1",
     "ultralytics>=8.3.228",
     "uvicorn>=0.40.0",
+    "websockets>=16.0",
 ]
 
 [project.scripts]

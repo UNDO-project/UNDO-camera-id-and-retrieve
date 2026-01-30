@@ -3,6 +3,10 @@
 from contextlib import asynccontextmanager
 from typing import Dict, Any
 
+from importlib.metadata import PackageNotFoundError, version as pkg_version
+from pathlib import Path
+import tomllib
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -14,6 +18,38 @@ from src.api.exceptions import generic_exception_handler
 from src.config import paths
 
 
+def get_app_version() -> str:
+    """
+    Resolve the app version from pyproject.toml.
+
+    1) Prefer installed package metadata (works in Docker/prod when installed).
+    2) Fallback to reading pyproject.toml when running from source.
+    """
+    package_name = (
+        "cctv-identification-and-research"  # matches [project].name in pyproject.toml
+    )
+
+    try:
+        return pkg_version(package_name)
+    except PackageNotFoundError:
+        # Running from source without an installed distribution
+        pyproject_path = Path(__file__).resolve().parents[2] / "pyproject.toml"
+        try:
+            data = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
+            return data["project"]["version"]
+        except (
+            FileNotFoundError,
+            OSError,
+            UnicodeDecodeError,
+            tomllib.TOMLDecodeError,
+            KeyError,
+        ):
+            return "0.0.0"
+
+
+APP_VERSION = get_app_version()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan event handler for startup and shutdown.
@@ -23,6 +59,7 @@ async def lifespan(app: FastAPI):
     """
     # Startup
     logger.info("Starting cIDaR API server...")
+    logger.info(f"API version: {APP_VERSION}")
     logger.info(f"CORS origins: {settings.cors_origins}")
     logger.info("API documentation available at /docs")
 
@@ -87,7 +124,7 @@ class CORSMiddlewareStaticFiles(StaticFiles):
 app = FastAPI(
     title="cIDaR - Camera Identification and Research API",
     description="API for identifying CCTV cameras in images using YOLOv8 and CLIP",
-    version="0.5.0",
+    version=APP_VERSION,
     docs_url="/docs",
     redoc_url="/redoc",
     lifespan=lifespan,

@@ -6,8 +6,9 @@
 
 
 A multi-stage pipeline for scraping CCTV camera product data from vendor sites,
-building a structured dataset, validating it, and identifying
-cameras in real-world images using a YOLOv8-based detector and a catalog index.
+building a structured dataset, validating it, and identifying cameras in real-world
+images using a YOLOv8-based detector and CLIP-based catalog matching. Includes a
+REST API with real-time WebSocket video streaming and batch video processing capabilities.
 
 ## Quickstart
 
@@ -51,6 +52,11 @@ cidar-identify \
   --image path/to/photo.jpg \
   --top-k 5 \
   --min-similarity 0.3
+
+# 9. (Optional) Start the API server for remote access
+cidar-api
+# API available at http://localhost:8000
+# Interactive docs at http://localhost:8000/docs
 ```
 
 ## Stages
@@ -87,8 +93,9 @@ The project is organized into sequential stages:
 
 4. **Stage 4 – Camera Identification & Retrieval**
    - Entry point: `cidar-identify` (console script from `src/identification/cli.py`)
-   - Package: `src/identification/`
-   - Goal: given an input image, detect cameras (YOLOv8), crop them, and retrieve
+   - API entry point: `cidar-api` (FastAPI server from `src/api/main.py`)
+   - Package: `src/identification/`, `src/api/`
+   - Goal: given an input image or video, detect cameras (YOLOv8), crop them, and retrieve
      the most likely catalog matches from `products.parquet`.
    - Current components:
      - `src/models/identification.py`: Pydantic models for
@@ -104,6 +111,8 @@ The project is organized into sequential stages:
      - `src/identification/service.py`: `IdentificationService` orchestration
        of detection, cropping, embedding, and retrieval.
      - `src/identification/cli.py`: CLI wrapper around `IdentificationService`.
+     - `src/api/`: FastAPI REST API with WebSocket video streaming, batch video processing,
+       and catalog browsing endpoints.
 
 ## Setup
 
@@ -340,8 +349,14 @@ cidar-identify \
 
 ## API Server
 
-The project includes a FastAPI-based REST API that wraps the identification service,
-enabling remote access for frontend applications and integrations.
+The project includes a FastAPI-based REST API that provides:
+- **Image identification**: Upload images for camera detection and catalog matching
+- **Real-time video streaming**: WebSocket endpoint for live video frame processing
+- **Video batch processing**: Upload videos for background processing with progress tracking
+- **Catalog browsing**: Search, filter, and paginate through the camera catalog
+- **Static file serving**: Direct access to camera images and PDF datasheets
+
+This enables frontend applications, mobile apps, and third-party integrations to access the camera identification system remotely.
 
 ### Starting the API server
 
@@ -376,9 +391,31 @@ CIDAR_API_CORS_ORIGINS='["http://localhost:3000","https://myapp.com"]' cidar-api
   - Request: `multipart/form-data` with image file
   - Response: Detection results with matched cameras
 
+**Video Streaming (WebSocket):**
+- `WS /api/v1/ws/video-stream` - Real-time video frame processing
+  - Query params: `mode` (detect_only|full), `target_fps` (1-30)
+  - Accepts JPEG frames, returns annotated frames + JSON metadata
+  - Two modes: detection-only or full identification with catalog matching
+
+**Video Upload (Batch Processing):**
+- `POST /api/v1/process-video` - Upload video for background processing
+  - Accepts: MP4, AVI, MOV, WebM (up to 500MB, 30 min duration)
+  - Returns task ID for tracking progress
+- `GET /api/v1/video-status/{task_id}` - Get processing task status
+- `GET /api/v1/video-download/{task_id}` - Download processed video
+- `DELETE /api/v1/video-task/{task_id}` - Delete task and files
+
 **Catalog:**
 - `GET /api/v1/catalog/stats` - Get catalog statistics
+- `GET /api/v1/catalog/cameras` - List cameras with pagination and filters
+  - Query params: `page`, `limit`, `vendor`, `category`, `series`, `search`
+- `GET /api/v1/catalog/cameras/{camera_id}` - Get camera details by ID
+- `GET /api/v1/catalog/facets` - Get available filter options with counts
 - `POST /api/v1/catalog/reload` - Reload catalog embeddings (admin)
+
+**Static Files:**
+- `GET /api/v1/images/{vendor}/{series}/{filename}` - Serve camera images (CORS enabled)
+- `GET /api/v1/datasheets/{vendor}/{series}/{filename}` - Serve PDF datasheets (CORS enabled)
 
 **Documentation:**
 - `GET /` - API information
@@ -429,9 +466,298 @@ const results = await response.json();
 console.log(`Found ${results.detections_count} cameras`);
 ```
 
+### Real-Time Video Streaming (WebSocket)
+
+The API supports real-time video frame processing via WebSocket for live camera feeds or video playback. This is ideal for browser-based applications that need low-latency camera detection.
+
+**Features:**
+- **Two processing modes:**
+  - `detect_only`: Fast detection with bounding boxes only
+  - `full`: Detection + catalog matching with similarity scores
+- **Configurable FPS**: Target processing rate (1-30 FPS)
+- **Binary protocol**: Send JPEG frames, receive annotated frames + JSON metadata
+- **Automatic frame skipping**: Maintains target FPS under load
+
+**JavaScript example:**
+```javascript
+// Connect to WebSocket endpoint
+const ws = new WebSocket('ws://localhost:8000/api/v1/ws/video-stream?mode=detect_only&target_fps=15');
+ws.binaryType = 'arraybuffer';
+
+// Handle connection open
+ws.onopen = () => {
+  console.log('WebSocket connected');
+};
+
+// Send video frames (from canvas, video element, or MediaStream)
+function sendFrame(videoElement) {
+  const canvas = document.createElement('canvas');
+  canvas.width = videoElement.videoWidth;
+  canvas.height = videoElement.videoHeight;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(videoElement, 0, 0);
+
+  canvas.toBlob((blob) => {
+    ws.send(blob);
+  }, 'image/jpeg', 0.85);
+}
+
+// Receive results
+ws.onmessage = (event) => {
+  if (event.data instanceof ArrayBuffer) {
+    // Annotated frame (binary JPEG)
+    const blob = new Blob([event.data], { type: 'image/jpeg' });
+    const url = URL.createObjectURL(blob);
+    document.getElementById('output').src = url;
+  } else {
+    // Metadata (JSON)
+    const metadata = JSON.parse(event.data);
+    console.log(`Frame ${metadata.frame_number}: ${metadata.detections.length} cameras detected`);
+    console.log(`Processing time: ${metadata.processing_time_ms}ms, FPS: ${metadata.fps_actual}`);
+
+    // Access detection data
+    metadata.detections.forEach(det => {
+      console.log(`  Camera: confidence=${det.confidence}, bbox=[${det.bbox}]`);
+      if (det.matches) {
+        det.matches.forEach(match => {
+          console.log(`    Match: ${match.model_name} (${match.similarity})`);
+        });
+      }
+    });
+  }
+};
+
+// Handle errors and disconnection
+ws.onerror = (error) => {
+  console.error('WebSocket error:', error);
+};
+
+ws.onclose = () => {
+  console.log('WebSocket disconnected');
+};
+```
+
+**Python example (using websockets library):**
+```python
+import asyncio
+import websockets
+import cv2
+import json
+
+async def stream_video():
+    uri = "ws://localhost:8000/api/v1/ws/video-stream?mode=full&target_fps=10"
+
+    async with websockets.connect(uri) as ws:
+        cap = cv2.VideoCapture("video.mp4")
+
+        while cap.isOpened():
+            ret, frame = cap.read()
+            if not ret:
+                break
+
+            # Encode frame as JPEG
+            _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            frame_bytes = buffer.tobytes()
+
+            # Send frame
+            await ws.send(frame_bytes)
+
+            # Receive annotated frame (binary)
+            annotated_bytes = await ws.recv()
+
+            # Receive metadata (text/JSON)
+            metadata_json = await ws.recv()
+            metadata = json.loads(metadata_json)
+
+            print(f"Frame {metadata['frame_number']}: {len(metadata['detections'])} cameras")
+
+        cap.release()
+
+asyncio.run(stream_video())
+```
+
+### Video Upload & Batch Processing
+
+For processing pre-recorded videos, the API provides asynchronous batch processing with task tracking. Upload a video file and retrieve the processed result when ready.
+
+**Features:**
+- Supports MP4, AVI, MOV, WebM formats
+- Configurable processing options (FPS, detection mode)
+- Background processing with progress tracking
+- Automatic cleanup after 24 hours
+
+**Upload a video for processing:**
+```bash
+# Basic upload
+curl -X POST "http://localhost:8000/api/v1/process-video" \
+  -F "file=@surveillance_footage.mp4"
+
+# With custom options
+curl -X POST "http://localhost:8000/api/v1/process-video" \
+  -F "file=@surveillance_footage.mp4" \
+  -F 'options={"target_fps": 10, "identification_mode": "full", "output_format": "mp4"}'
+
+# Response:
+{
+  "task_id": "abc-123-def-456",
+  "status": "queued",
+  "filename": "surveillance_footage.mp4",
+  "file_size_mb": 45.2,
+  "created_at": "2024-01-15T10:30:00Z"
+}
+```
+
+**Check processing status:**
+```bash
+curl "http://localhost:8000/api/v1/video-status/abc-123-def-456"
+
+# Response (in progress):
+{
+  "task_id": "abc-123-def-456",
+  "status": "processing",
+  "progress_percent": 67.5,
+  "frames_processed": 1350,
+  "frames_total": 2000,
+  "current_fps": 12.3,
+  "elapsed_seconds": 110.5,
+  "output_url": null,
+  "filename": "surveillance_footage.mp4",
+  "options": {
+    "target_fps": 10,
+    "identification_mode": "full",
+    "output_format": "mp4"
+  }
+}
+
+# Response (completed):
+{
+  "task_id": "abc-123-def-456",
+  "status": "completed",
+  "progress_percent": 100.0,
+  "frames_processed": 2000,
+  "frames_total": 2000,
+  "output_url": "/api/v1/video-download/abc-123-def-456",
+  ...
+}
+```
+
+**Download processed video:**
+```bash
+curl -O "http://localhost:8000/api/v1/video-download/abc-123-def-456"
+# Downloads: surveillance_footage_processed.mp4
+```
+
+**Delete task and files:**
+```bash
+curl -X DELETE "http://localhost:8000/api/v1/video-task/abc-123-def-456"
+```
+
+**Python example:**
+```python
+import requests
+import time
+
+# Upload video
+with open("video.mp4", "rb") as f:
+    response = requests.post(
+        "http://localhost:8000/api/v1/process-video",
+        files={"file": f},
+        data={"options": '{"target_fps": 15, "identification_mode": "detect_only"}'}
+    )
+    task = response.json()
+    task_id = task["task_id"]
+    print(f"Task created: {task_id}")
+
+# Poll for completion
+while True:
+    response = requests.get(f"http://localhost:8000/api/v1/video-status/{task_id}")
+    status = response.json()
+
+    print(f"Progress: {status['progress_percent']:.1f}% ({status['frames_processed']}/{status['frames_total']} frames)")
+
+    if status["status"] == "completed":
+        print("Processing complete!")
+        break
+    elif status["status"] == "failed":
+        print(f"Processing failed: {status['error']}")
+        break
+
+    time.sleep(2)
+
+# Download result
+response = requests.get(f"http://localhost:8000/api/v1/video-download/{task_id}")
+with open("output_processed.mp4", "wb") as f:
+    f.write(response.content)
+print("Downloaded processed video")
+```
+
+### Catalog Browsing & Search
+
+The API provides rich catalog endpoints for building frontend UIs with filtering, pagination, and search.
+
+**List cameras with filters:**
+```bash
+# Get first page (20 cameras)
+curl "http://localhost:8000/api/v1/catalog/cameras?page=1&limit=20"
+
+# Filter by vendor
+curl "http://localhost:8000/api/v1/catalog/cameras?vendor=Axis&page=1"
+
+# Filter by category and series
+curl "http://localhost:8000/api/v1/catalog/cameras?category=Network%20cameras&series=AXIS%20M30&page=1"
+
+# Search by model name
+curl "http://localhost:8000/api/v1/catalog/cameras?search=PTZ&page=1"
+
+# Response:
+{
+  "data": [
+    {
+      "id": "axis-m3057-plr-mk-ii",
+      "model_name": "AXIS M3057-PLRVE Mk II",
+      "display_name": "AXIS M3057-PLRVE Mk II Network Camera",
+      "source": "Axis",
+      "category": "Network cameras",
+      "series": "AXIS M30 Series",
+      "image_urls": [
+        "/api/v1/images/Axis/AXIS_M30_Series/axis-m3057-plr-mk-ii_1.jpg"
+      ],
+      "datasheet_url": "/api/v1/datasheets/Axis/AXIS_M30_Series/axis-m3057-plr-mk-ii.pdf"
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 20,
+    "total": 1517,
+    "total_pages": 76
+  },
+  "facets": {
+    "vendors": [{"value": "Axis", "count": 892}, {"value": "HikVision", "count": 625}],
+    "categories": [{"value": "Network cameras", "count": 1245}, ...],
+    "series": [{"value": "AXIS M30 Series", "count": 45}, ...]
+  }
+}
+```
+
+**Get camera details:**
+```bash
+curl "http://localhost:8000/api/v1/catalog/cameras/axis-m3057-plr-mk-ii"
+
+# Response includes full specifications, all images, datasheet, etc.
+```
+
+**Get filter facets:**
+```bash
+curl "http://localhost:8000/api/v1/catalog/facets"
+
+# Returns available vendors, categories, and series with counts
+```
+
 ### API configuration
 
-Configure the API server using environment variables with the `CIDAR_API_` prefix:
+Configure the API server using environment variables with the `CIDAR_API_`, `CIDAR_VIDEO_`, and `CIDAR_STREAM_` prefixes:
+
+**API Server Settings** (`CIDAR_API_` prefix):
 
 | Variable | Description | Default |
 |----------|-------------|---------|
@@ -441,7 +767,27 @@ Configure the API server using environment variables with the `CIDAR_API_` prefi
 | `CIDAR_API_WORKERS` | Number of worker processes | `1` |
 | `CIDAR_API_CORS_ORIGINS` | Allowed CORS origins (JSON array) | `["http://localhost:3000", "http://localhost:5173"]` |
 | `CIDAR_API_LOG_LEVEL` | Logging level | `INFO` |
-| `CIDAR_API_MAX_UPLOAD_SIZE_MB` | Maximum upload size in MB | `10` |
+| `CIDAR_API_MAX_UPLOAD_SIZE_MB` | Max image upload size in MB | `10` |
+
+**Video Upload Settings** (`CIDAR_VIDEO_` prefix):
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `CIDAR_VIDEO_MAX_UPLOAD_SIZE_MB` | Max video upload size in MB | `500` |
+| `CIDAR_VIDEO_MAX_DURATION_MINUTES` | Max video duration in minutes | `30` |
+| `CIDAR_VIDEO_DEFAULT_TARGET_FPS` | Default processing FPS | `15` |
+| `CIDAR_VIDEO_TASK_CLEANUP_HOURS` | Hours before task cleanup | `24` |
+
+**Video Streaming Settings** (`CIDAR_STREAM_` prefix):
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `CIDAR_STREAM_MAX_CONNECTIONS` | Max concurrent WebSocket connections | `5` |
+| `CIDAR_STREAM_MAX_FPS` | Maximum allowed FPS | `30` |
+| `CIDAR_STREAM_DEFAULT_FPS` | Default FPS if not specified | `15` |
+| `CIDAR_STREAM_FRAME_TIMEOUT_SECONDS` | Frame processing timeout | `5.0` |
+| `CIDAR_STREAM_INPUT_BUFFER_SIZE` | Input frame buffer size | `10` |
+| `CIDAR_STREAM_JPEG_QUALITY` | JPEG encoding quality (1-100) | `85` |
 
 ### Interactive API documentation
 
