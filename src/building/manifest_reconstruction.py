@@ -176,7 +176,8 @@ class ManifestReconstructor:
             logger.error(f"Failed to load product cache: {e}")
             return {}
 
-    def _create_manifest_skeleton(self) -> dict:
+    @staticmethod
+    def _create_manifest_skeleton() -> dict:
         r"""
         Create empty manifest structure with metadata fields.
 
@@ -195,7 +196,8 @@ class ManifestReconstructor:
             "categories": {},
         }
 
-    def _create_category_skeleton(self) -> dict:
+    @staticmethod
+    def _create_category_skeleton() -> dict:
         r"""
         Create empty category structure with counters.
 
@@ -209,7 +211,8 @@ class ManifestReconstructor:
             "series": {},
         }
 
-    def _create_series_skeleton(self) -> dict:
+    @staticmethod
+    def _create_series_skeleton() -> dict:
         r"""
         Create empty series structure with counters.
 
@@ -256,8 +259,8 @@ class ManifestReconstructor:
             "specifications_html": product_data.get("specifications_html", {}),
         }
 
+    @staticmethod
     def _update_series_stats(
-        self,
         series_data: dict,
         product_entry: dict,
         product_data: dict,
@@ -281,7 +284,8 @@ class ManifestReconstructor:
         if product_data.get("specifications_html"):
             series_data["specs_count"] += 1
 
-    def _update_category_stats(self, category_data: dict, series_data: dict) -> None:
+    @staticmethod
+    def _update_category_stats(category_data: dict, series_data: dict) -> None:
         r"""
         Update category-level statistics from series data.
 
@@ -293,8 +297,8 @@ class ManifestReconstructor:
         category_data["image_count"] += series_data["image_count"]
         category_data["pdf_count"] += series_data["pdf_count"]
 
+    @staticmethod
     def _update_global_stats(
-        self,
         manifest: dict,
         series_data: dict,
         product_data: dict,
