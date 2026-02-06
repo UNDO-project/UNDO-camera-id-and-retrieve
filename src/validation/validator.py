@@ -9,6 +9,7 @@ from loguru import logger
 
 from src.config import paths
 from src.storage.manifest import ManifestRecorder
+from src.validation.file_validators import ImageFileValidator, PdfFileValidator
 
 
 class DatasetValidator:
@@ -240,10 +241,16 @@ class DatasetValidator:
         r"""
         Layer 2: File Integrity (Media).
 
+        Orchestrates file validation using specialized validators:
+        - ImageFileValidator for image files
+        - PdfFileValidator for PDF files
+
         Checks:
         - Files exist on filesystem
         - Files are readable
         - Basic file format validation (magic bytes)
+
+        :param project_root: Root directory for file path resolution
         """
         if self.df is None:
             return
@@ -253,83 +260,19 @@ class DatasetValidator:
 
         logger.info("Layer 2: Validating file integrity...")
 
-        missing_images = 0
-        invalid_format_images = 0
-        missing_pdfs = 0
-        # orphaned_images = 0
+        # Initialize validators
+        image_validator = ImageFileValidator(project_root, self)
+        pdf_validator = PdfFileValidator(project_root, self)
 
-        # Check referenced files
+        # Validate each row
         for idx, row in self.df.iterrows():
-            # Check images
-            if not pd.isna(row.get("image_files")) and row.get("image_files") != "[]":
-                try:
-                    image_files = json.loads(row.get("image_files", "[]"))
-                    for img_path in image_files:
-                        full_path = project_root / img_path
-                        if not full_path.exists():
-                            missing_images += 1
-                            self.errors.append(
-                                {"type": "missing_image", "path": img_path}
-                            )
-                        elif full_path.suffix.lower() == ".webp":
-                            # Basic magic byte check for webp
-                            try:
-                                with open(full_path, "rb") as f:
-                                    header = f.read(4)
-                                    if header != b"RIFF":
-                                        invalid_format_images += 1
-                                        self.errors.append(
-                                            {
-                                                "type": "invalid_image_format",
-                                                "path": img_path,
-                                            }
-                                        )
-                            except Exception as e:
-                                self.errors.append(
-                                    {
-                                        "type": "cannot_read_image",
-                                        "path": img_path,
-                                        "error": str(e),
-                                    }
-                                )
-                except json.JSONDecodeError:
-                    self.errors.append({"type": "invalid_json_image_files", "row": idx})
+            row_dict = row.to_dict()
+            image_validator.validate(row_dict, idx)
+            pdf_validator.validate(row_dict, idx)
 
-            # Check PDFs
-            if not pd.isna(row.get("datasheet_file")) and row.get("datasheet_file"):
-                pdf_file = row.get("datasheet_file")
-                full_path = project_root / pdf_file
-                if not full_path.exists():
-                    missing_pdfs += 1
-                    self.errors.append({"type": "missing_pdf", "path": pdf_file})
-                else:
-                    # Basic magic byte check for PDF
-                    try:
-                        with open(full_path, "rb") as f:
-                            header = f.read(4)
-                            if header != b"%PDF":
-                                self.errors.append(
-                                    {"type": "invalid_pdf_format", "path": pdf_file}
-                                )
-                    except Exception as e:
-                        self.errors.append(
-                            {
-                                "type": "cannot_read_pdf",
-                                "path": pdf_file,
-                                "error": str(e),
-                            }
-                        )
-
-        self.stats["missing_images"] = missing_images
-        self.stats["invalid_format_images"] = invalid_format_images
-        self.stats["missing_pdfs"] = missing_pdfs
-
-        if missing_images > 0:
-            logger.warning(f"Found {missing_images} missing images")
-        if invalid_format_images > 0:
-            logger.warning(f"Found {invalid_format_images} invalid image formats")
-        if missing_pdfs > 0:
-            logger.warning(f"Found {missing_pdfs} missing PDFs")
+        # Update statistics
+        image_validator.update_stats()
+        pdf_validator.update_stats()
 
         logger.success("File integrity validation complete")
 
@@ -554,31 +497,61 @@ class DatasetValidator:
 
         print("=" * 80 + "\n")
 
-    def validate_all(
-        self, verbose: bool = False, project_root: Path | None = None
-    ) -> bool:
+    def _setup_validation(self) -> bool:
         r"""
-        Run all validation layers.
+        Load dataset and manifest for validation.
 
-        :param verbose: Print detailed output
-        :param project_root: Root directory for file path resolution
-        :return: True if no errors found
+        :return: True if setup successful
         """
         if not self.load_dataset():
             return False
 
-        # Load or generate manifest
         if not self.load_manifest():
             logger.info("Generating manifest from dataset...")
             self.generate_manifest_from_parquet()
-            self.load_manifest()
+            if not self.load_manifest():
+                logger.error("Failed to generate manifest")
+                return False
 
+        return True
+
+    def _run_all_validation_layers(self, project_root: Path | None) -> None:
+        r"""
+        Execute all 5 validation layers.
+
+        :param project_root: Root directory for file path resolution
+        """
         self.validate_schema()
         self.validate_files(project_root)
         self.validate_data_quality()
         self.validate_statistics()
         self.compare_with_manifest()
 
+    def validate_all(
+        self, verbose: bool = False, project_root: Path | None = None
+    ) -> bool:
+        r"""
+        Run all validation layers and report results.
+
+        Orchestrates the validation process:
+        1. Load dataset and manifest
+        2. Execute all validation layers
+        3. Print comprehensive report
+        4. Return success/failure status
+
+        :param verbose: Print detailed output
+        :param project_root: Root directory for file path resolution
+        :return: True if no errors found
+        """
+        # Step 1: Setup validation (load dataset and manifest)
+        if not self._setup_validation():
+            return False
+
+        # Step 2: Execute all validation layers
+        self._run_all_validation_layers(project_root)
+
+        # Step 3: Print report
         self.print_report(verbose=verbose)
 
+        # Step 4: Return success/failure
         return len(self.errors) == 0
