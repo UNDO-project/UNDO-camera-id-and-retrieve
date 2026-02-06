@@ -5,8 +5,9 @@ catalog search to produce camera identification results for input
 images.
 """
 
+from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional
+from typing import Optional
 
 from loguru import logger
 from PIL import Image
@@ -16,7 +17,22 @@ from src.identification.catalog import load_catalog
 from src.identification.detector import Detector
 from src.identification.embeddings import embed_image
 from src.identification.index import CatalogIndex
-from src.models.identification import CameraMatch, RetrievalResult
+from src.models.identification import (
+    BoundingBox,
+    CameraDetection,
+    CameraMatch,
+    RetrievalResult,
+)
+
+
+@dataclass
+class CropInfo:
+    """Information about an extracted detection crop."""
+
+    detection: CameraDetection
+    crop: Image.Image
+    crop_path: Path | None
+    clamped_bbox: BoundingBox
 
 
 class IdentificationService:
@@ -85,15 +101,226 @@ class IdentificationService:
         if self.save_crops:
             self.crop_dir.mkdir(parents=True, exist_ok=True)
 
+    @staticmethod
+    def _validate_image_path(image_path: Path) -> None:
+        r"""
+        Validate that image file exists.
+
+        :param image_path: Path to validate
+        :raises FileNotFoundError: If image does not exist
+        """
+        if not image_path.exists():
+            raise FileNotFoundError(f"Image not found: {image_path}")
+
+    def _detect_cameras(self, image_path: Path) -> list[CameraDetection]:
+        r"""
+        Run YOLOv8 detection on image.
+
+        :param image_path: Path to image file
+        :return: List of detected cameras
+        """
+        logger.info(f"Running detection on image: {image_path}")
+        return self.detector.detect_from_path(image_path)
+
+    @staticmethod
+    def _clamp_bbox(bbox: BoundingBox, width: int, height: int) -> BoundingBox:
+        r"""
+        Clamp bounding box to image boundaries.
+
+        :param bbox: Original bounding box
+        :param width: Image width
+        :param height: Image height
+        :return: Clamped bounding box
+        """
+        return BoundingBox(
+            x_min=max(0, bbox.x_min),
+            y_min=max(0, bbox.y_min),
+            x_max=min(width, bbox.x_max),
+            y_max=min(height, bbox.y_max),
+        )
+
+    @staticmethod
+    def _is_valid_bbox(bbox: BoundingBox) -> bool:
+        r"""
+        Check if bounding box is valid (non-degenerate).
+
+        :param bbox: Bounding box to check
+        :return: True if bbox has positive area
+        """
+        return bbox.x_max > bbox.x_min and bbox.y_max > bbox.y_min
+
+    def _extract_single_crop(
+        self,
+        image: Image.Image,
+        detection: CameraDetection,
+        idx: int,
+        image_path: Path,
+    ) -> CropInfo | None:
+        r"""
+        Extract single crop from image.
+
+        :param image: PIL Image to crop from
+        :param detection: Detection with bounding box
+        :param idx: Detection index for naming
+        :param image_path: Original image path for naming
+        :return: CropInfo if valid, None if bbox is degenerate
+        """
+        width, height = image.size
+        clamped_bbox = self._clamp_bbox(detection.bbox, width, height)
+
+        if not self._is_valid_bbox(clamped_bbox):
+            logger.debug(
+                "Skipping degenerate bbox for detection %d: (%d, %d, %d, %d)",
+                idx,
+                clamped_bbox.x_min,
+                clamped_bbox.y_min,
+                clamped_bbox.x_max,
+                clamped_bbox.y_max,
+            )
+            return None
+
+        # Crop image
+        crop = image.crop(
+            (
+                clamped_bbox.x_min,
+                clamped_bbox.y_min,
+                clamped_bbox.x_max,
+                clamped_bbox.y_max,
+            )
+        )
+
+        # Save crop if enabled
+        crop_path: Path | None = None
+        if self.save_crops:
+            crop_filename = f"{image_path.stem}_det{idx}.png"
+            crop_path = self.crop_dir / crop_filename
+            crop.save(crop_path)
+
+        return CropInfo(
+            detection=detection,
+            crop=crop,
+            crop_path=crop_path,
+            clamped_bbox=clamped_bbox,
+        )
+
+    def _extract_detection_crops(
+        self,
+        image_path: Path,
+        detections: list[CameraDetection],
+    ) -> list[CropInfo]:
+        r"""
+        Extract and optionally save crops for each detection.
+
+        :param image_path: Path to original image
+        :param detections: List of detections
+        :return: List of valid crop info objects
+        """
+        image = Image.open(image_path).convert("RGB")
+        crops: list[CropInfo] = []
+
+        for idx, detection in enumerate(detections):
+            crop_info = self._extract_single_crop(image, detection, idx, image_path)
+            if crop_info is not None:
+                crops.append(crop_info)
+
+        return crops
+
+    def _embed_crop(self, crop_info: CropInfo, image_path: Path, idx: int):
+        r"""
+        Compute embedding for a cropped patch.
+
+        :param crop_info: Crop information
+        :param image_path: Original image path for temp file naming
+        :param idx: Detection index
+        :return: Embedding vector
+        """
+        # Use crop_path if saved, otherwise embed from PIL image
+        if crop_info.crop_path is not None:
+            return embed_image(crop_info.crop_path)
+        else:
+            # Fallback: save to a temporary file under crop_dir
+            tmp_path = self.crop_dir / f"{image_path.stem}_det{idx}_tmp.png"
+            crop_info.crop.save(tmp_path)
+            query_vec = embed_image(tmp_path)
+            tmp_path.unlink(missing_ok=True)
+            return query_vec
+
+    def _filter_and_enrich_matches(
+        self,
+        matches: list[CameraMatch],
+        similarity_threshold: float,
+    ) -> list[CameraMatch]:
+        r"""
+        Filter matches by similarity and enrich with catalog data.
+
+        :param matches: Raw matches from index search
+        :param similarity_threshold: Minimum similarity threshold
+        :return: Filtered and enriched matches
+        """
+        filtered_matches: list[CameraMatch] = []
+        for match in matches:
+            if match.score < similarity_threshold:
+                continue
+
+            record = self.catalog.get(match.camera_id)
+            filtered_matches.append(
+                CameraMatch(
+                    camera_id=match.camera_id,
+                    score=match.score,
+                    catalog_image_path=match.catalog_image_path,
+                    source=match.source,
+                    record=record,
+                )
+            )
+        return filtered_matches
+
+    def _retrieve_matches_for_crop(
+        self,
+        crop_info: CropInfo,
+        image_path: Path,
+        idx: int,
+        top_k: int,
+        similarity_threshold: float,
+    ) -> RetrievalResult:
+        r"""
+        Retrieve catalog matches for a single crop.
+
+        :param crop_info: Crop information
+        :param image_path: Original image path
+        :param idx: Detection index
+        :param top_k: Maximum number of matches
+        :param similarity_threshold: Minimum similarity threshold
+        :return: Retrieval result for this detection
+        """
+        # Compute embedding
+        query_vec = self._embed_crop(crop_info, image_path, idx)
+
+        # Run nearest-neighbor search in the catalog index
+        matches = self.index.search(query_vec, top_k=top_k)
+
+        # Filter by similarity threshold and enrich with full records
+        filtered_matches = self._filter_and_enrich_matches(
+            matches, similarity_threshold
+        )
+
+        # Update detection with crop path if saved
+        if crop_info.crop_path is not None:
+            crop_info.detection.crop_path = crop_info.crop_path
+
+        return RetrievalResult(
+            detection=crop_info.detection,
+            matches=filtered_matches,
+        )
+
     def identify_from_image(
         self,
         image_path: Path | str,
         top_k: int = 5,
         min_similarity: Optional[float] = None,
-    ) -> List[RetrievalResult]:
+    ) -> list[RetrievalResult]:
         r"""Identify cameras in the given image.
 
-        The pipeline is:
+        Orchestrates the identification pipeline:
 
         1. Run YOLOv8 detector to obtain camera detections.
         2. For each detection, crop the corresponding patch.
@@ -109,93 +336,37 @@ class IdentificationService:
         :raises FileNotFoundError: If the input image does not exist
         """
         image_path = Path(image_path)
-        if not image_path.exists():
-            raise FileNotFoundError(f"Image not found: {image_path}")
+
+        # Step 1: Validate input
+        self._validate_image_path(image_path)
+
+        # Step 2: Detect cameras
+        detections = self._detect_cameras(image_path)
+        if not detections:
+            logger.info("No cameras detected in image")
+            return []
+
+        # Step 3: Extract crops
+        crops = self._extract_detection_crops(image_path, detections)
+        if not crops:
+            logger.info("No valid detection crops extracted")
+            return []
 
         # Use provided min_similarity or fall back to instance default
         similarity_threshold = (
             min_similarity if min_similarity is not None else self.min_similarity
         )
 
-        logger.info(f"Running detection on image: {image_path}")
-        detections = self.detector.detect_from_path(image_path)
-
-        if not detections:
-            logger.info("No cameras detected in image")
-            return []
-
-        # Open image once and reuse for all crops.
-        image = Image.open(image_path).convert("RGB")
-        width, height = image.size
-
-        results: List[RetrievalResult] = []
-
-        for idx, detection in enumerate(detections):
-            # Clamp bounding box to image bounds to avoid PIL errors.
-            x_min = max(0, detection.bbox.x_min)
-            y_min = max(0, detection.bbox.y_min)
-            x_max = min(width, detection.bbox.x_max)
-            y_max = min(height, detection.bbox.y_max)
-
-            if x_max <= x_min or y_max <= y_min:
-                logger.debug(
-                    "Skipping degenerate bbox for detection %d: (%d, %d, %d, %d)",
-                    idx,
-                    x_min,
-                    y_min,
-                    x_max,
-                    y_max,
-                )
-                continue
-
-            crop = image.crop((x_min, y_min, x_max, y_max))
-
-            crop_path: Optional[Path] = None
-            if self.save_crops:
-                crop_filename = f"{image_path.stem}_det{idx}.png"
-                crop_path = self.crop_dir / crop_filename
-                crop.save(crop_path)
-
-            # Embed the cropped patch. We reuse the path-based interface
-            # for simplicity by saving the crop if needed.
-            if crop_path is not None:
-                query_vec = embed_image(crop_path)
-            else:
-                # Fallback: save to a temporary file under crop_dir
-                tmp_path = self.crop_dir / f"{image_path.stem}_det{idx}_tmp.png"
-                crop.save(tmp_path)
-                query_vec = embed_image(tmp_path)
-                tmp_path.unlink(missing_ok=True)
-
-            # Run nearest-neighbor search in the catalog index.
-            matches = self.index.search(query_vec, top_k=top_k)
-
-            # Filter by similarity threshold and enrich with full records.
-            filtered_matches: List[CameraMatch] = []
-            for match in matches:
-                if match.score < similarity_threshold:
-                    continue
-
-                record = self.catalog.get(match.camera_id)
-                filtered_matches.append(
-                    CameraMatch(
-                        camera_id=match.camera_id,
-                        score=match.score,
-                        catalog_image_path=match.catalog_image_path,
-                        source=match.source,
-                        record=record,
-                    )
-                )
-
-            # Update detection with crop path (if saved) and build result.
-            if crop_path is not None:
-                detection.crop_path = crop_path
-
-            results.append(
-                RetrievalResult(
-                    detection=detection,
-                    matches=filtered_matches,
-                )
+        # Step 4: Retrieve matches for each crop
+        results: list[RetrievalResult] = []
+        for idx, crop_info in enumerate(crops):
+            result = self._retrieve_matches_for_crop(
+                crop_info,
+                image_path,
+                idx,
+                top_k,
+                similarity_threshold,
             )
+            results.append(result)
 
         return results
