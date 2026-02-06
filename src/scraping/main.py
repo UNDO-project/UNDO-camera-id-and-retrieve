@@ -2,6 +2,8 @@
 
 import argparse
 import asyncio
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from loguru import logger
 
@@ -9,37 +11,34 @@ from src.scrapers import AxisCameraScraper, HikvisionCameraScraper
 from src.storage.download_cache import DownloadCache
 from src.storage.manifest import ManifestRecorder
 
+if TYPE_CHECKING:
+    from src.scrapers.base import CameraScraperBase
 
-async def scrape_products(vendor: str = "axis") -> None:
+
+@dataclass
+class ScrapingContext:
+    """Context object holding scraping state."""
+
+    scraper: "CameraScraperBase"
+    download_cache: DownloadCache
+    manifest_recorder: ManifestRecorder
+    vendor: str
+
+
+def _initialize_scraping_context(vendor: str) -> ScrapingContext:
     r"""
-    Scrape CCTV products and save to filesystem.
+    Initialize scraping context with cache, scraper, and manifest recorder.
 
-    This stage:
-    - Downloads images and PDFs
-    - Organizes files by category/series/product
-    - Creates verification manifest
-    - Skips already-downloaded content to reduce server burden
-
-    :param vendor: Vendor to scrape ('axis', 'hikvision', or 'all')
+    :param vendor: Vendor name ('axis' or 'hikvision')
+    :return: ScrapingContext with initialized components
+    :raises ValueError: If vendor is not supported
     """
-    # Handle 'all' option
-    if vendor.lower() == "all":
-        logger.info("Scraping all vendors: axis, hikvision")
-        for vendor_name in ["axis", "hikvision"]:
-            logger.info(f"\n{'=' * 60}")
-            logger.info(f"Starting scrape for vendor: {vendor_name.upper()}")
-            logger.info(f"{'=' * 60}\n")
-            await scrape_products(vendor=vendor_name)
-        return
-
-    # Initialize download cache
     download_cache = DownloadCache()
     cache_stats = download_cache.get_stats()
     logger.info(
         f"Loaded download cache: {cache_stats['total_downloads']} downloads cached"
     )
 
-    # Select scraper based on vendor
     if vendor.lower() == "axis":
         scraper = AxisCameraScraper(download_cache=download_cache)
         logger.info("Using Axis Communications scraper")
@@ -53,75 +52,195 @@ async def scrape_products(vendor: str = "axis") -> None:
 
     manifest_recorder = ManifestRecorder()
 
+    return ScrapingContext(
+        scraper=scraper,
+        download_cache=download_cache,
+        manifest_recorder=manifest_recorder,
+        vendor=vendor,
+    )
+
+
+async def _process_product(
+    product_url: str,
+    category_name: str,
+    series_name: str,
+    context: ScrapingContext,
+) -> bool:
+    r"""
+    Process a single product: fetch details, download assets, record to manifest.
+
+    :param product_url: URL of the product page
+    :param category_name: Category name for organization
+    :param series_name: Series name for organization
+    :param context: Scraping context with scraper and recorders
+    :return: True if product processed successfully
+    """
     try:
-        categories = await scraper.fetch_categories()
-        logger.info(f"Processing {len(categories)} categories")
+        # Extract product details with full category/series context
+        product_details = await context.scraper.fetch_product_details(
+            product_url,
+            category_name=category_name,
+            series_name=series_name,
+        )
+        logger.info(f"      Product: {product_details.model_name}")
+        logger.info(
+            f"      Found: {len(product_details.images)} images, "
+            f"{len(product_details.specifications_html)} spec sections"
+        )
 
-        for category in categories:
-            logger.info(f"Category: {category.name}")
-            series_list = await scraper.fetch_cameras(category)
+        # Download images
+        if product_details.images:
+            image_paths = await context.scraper.download_and_organize_images(
+                product_details
+            )
+            product_details.image_files = image_paths
 
-            for series in series_list:
-                logger.info(f"  Series: {series.name}")
-                products = await scraper.fetch_products_in_series(series)
+        # Download PDF
+        if product_details.datasheet_url:
+            pdf_path = await context.scraper.download_and_save_pdf(product_details)
+            if pdf_path:
+                product_details.datasheet_file = pdf_path
 
-                for product_url in products:
-                    logger.info(f"    Processing: {product_url}")
-                    try:
-                        # Extract product details with full category/series context
-                        product_details = await scraper.fetch_product_details(
-                            product_url,
-                            category_name=category.name,
-                            series_name=series.name,
-                        )
-                        logger.info(f"      Product: {product_details.model_name}")
-                        logger.info(
-                            f"      Found: {len(product_details.images)} images, {len(product_details.specifications_html)} spec sections"
-                        )
+        # Record for manifest
+        context.manifest_recorder.record_product(product_details)
+        logger.success(f"      Saved {product_details.model_name}")
+        return True
 
-                        # Download images
-                        if product_details.images:
-                            image_paths = await scraper.download_and_organize_images(
-                                product_details
-                            )
-                            product_details.image_files = image_paths
+    except Exception as e:
+        logger.error(f"      Error processing product: {e}")
+        return False
 
-                        # Download PDF
-                        if product_details.datasheet_url:
-                            pdf_path = await scraper.download_and_save_pdf(
-                                product_details
-                            )
-                            if pdf_path:
-                                product_details.datasheet_file = pdf_path
 
-                        # Record for manifest
-                        manifest_recorder.record_product(product_details)
-                        logger.success(f"      Saved {product_details.model_name}")
+async def _scrape_series(
+    series,
+    category_name: str,
+    context: ScrapingContext,
+) -> int:
+    r"""
+    Scrape all products in a series.
 
-                    except Exception as e:
-                        logger.error(f"      Error processing product: {e}")
-                        continue
+    :param series: Series object with name
+    :param category_name: Category name for organization
+    :param context: Scraping context
+    :return: Number of products successfully processed
+    """
+    logger.info(f"  Series: {series.name}")
+    products = await context.scraper.fetch_products_in_series(series)
+
+    processed_count = 0
+    for product_url in products:
+        logger.info(f"    Processing: {product_url}")
+        success = await _process_product(
+            product_url, category_name, series.name, context
+        )
+        if success:
+            processed_count += 1
+
+    return processed_count
+
+
+async def _scrape_category(category, context: ScrapingContext) -> int:
+    r"""
+    Scrape all series in a category.
+
+    :param category: Category object with name
+    :param context: Scraping context
+    :return: Number of products successfully processed
+    """
+    logger.info(f"Category: {category.name}")
+    series_list = await context.scraper.fetch_cameras(category)
+
+    total_processed = 0
+    for series in series_list:
+        count = await _scrape_series(series, category.name, context)
+        total_processed += count
+
+    return total_processed
+
+
+async def _scrape_vendor(context: ScrapingContext) -> int:
+    r"""
+    Scrape all categories for a single vendor.
+
+    :param context: Scraping context with initialized scraper
+    :return: Number of products successfully processed
+    """
+    categories = await context.scraper.fetch_categories()
+    logger.info(f"Processing {len(categories)} categories")
+
+    total_processed = 0
+    for category in categories:
+        count = await _scrape_category(category, context)
+        total_processed += count
+
+    return total_processed
+
+
+def _report_final_stats(context: ScrapingContext) -> None:
+    r"""
+    Report final scraping statistics.
+
+    :param context: Scraping context with download cache
+    """
+    final_stats = context.download_cache.get_stats()
+    logger.info(
+        f"Final cache statistics: {final_stats['total_downloads']} total downloads, "
+        f"{final_stats['images']} images, {final_stats['pdfs']} PDFs, "
+        f"{final_stats['cached_products']} cached products, "
+        f"{final_stats['total_size_bytes'] / (1024 * 1024):.2f}MB total"
+    )
+
+
+async def scrape_products(vendor: str = "axis") -> None:
+    r"""
+    Scrape CCTV products and save to filesystem.
+
+    Orchestrates the scraping process by delegating to specialized methods:
+    1. Handle 'all' vendors option (recursive)
+    2. Initialize scraping context (cache, scraper, manifest recorder)
+    3. Scrape all categories for the vendor
+    4. Save manifest and report statistics
+
+    This stage:
+    - Downloads images and PDFs
+    - Organizes files by category/series/product
+    - Creates verification manifest
+    - Skips already-downloaded content to reduce server burden
+
+    :param vendor: Vendor to scrape ('axis', 'hikvision', or 'all')
+    """
+    # Handle 'all' option - recursively scrape each vendor
+    if vendor.lower() == "all":
+        logger.info("Scraping all vendors: axis, hikvision")
+        for vendor_name in ["axis", "hikvision"]:
+            logger.info(f"\n{'=' * 60}")
+            logger.info(f"Starting scrape for vendor: {vendor_name.upper()}")
+            logger.info(f"{'=' * 60}\n")
+            await scrape_products(vendor=vendor_name)
+        return
+
+    # Initialize scraping context
+    context = _initialize_scraping_context(vendor)
+
+    try:
+        # Scrape all categories for this vendor
+        total_products = await _scrape_vendor(context)
+        logger.info(f"Successfully processed {total_products} products")
 
         # Save manifest
         logger.info("Saving verification manifest...")
-        manifest_recorder.save_manifest()
+        context.manifest_recorder.save_manifest()
         logger.success("Scraping complete!")
 
-        # Report cache statistics
-        final_stats = download_cache.get_stats()
-        logger.info(
-            f"Final cache statistics: {final_stats['total_downloads']} total downloads, "
-            f"{final_stats['images']} images, {final_stats['pdfs']} PDFs, "
-            f"{final_stats['cached_products']} cached products, "
-            f"{final_stats['total_size_bytes'] / (1024 * 1024):.2f}MB total"
-        )
+        # Report statistics
+        _report_final_stats(context)
 
     except Exception as e:
         logger.error(f"Error during dataset building: {e}")
         raise
     finally:
-        await scraper.close()
-        download_cache.close()
+        await context.scraper.close()
+        context.download_cache.close()
 
 
 def main() -> None:
