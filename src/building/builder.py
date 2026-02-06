@@ -6,6 +6,7 @@ from pathlib import Path
 import pandas as pd
 from loguru import logger
 
+from src.building.merge_strategies import MergeStrategyFactory
 from src.config import paths
 from src.models.camera import CameraRecord
 from src.storage.versioning import DatasetVersionManager
@@ -173,8 +174,9 @@ class DatasetBuilder:
             logger.error(f"Failed to build dataset: {e}")
             return False
 
+    @staticmethod
     def _find_image_files_and_vendor(
-        self, category_name: str, series_name: str, camera_id: str
+        category_name: str, series_name: str, camera_id: str
     ) -> tuple[list[str], str | None]:
         r"""
         Find all image files for a product and detect vendor from filesystem.
@@ -300,208 +302,259 @@ class DatasetBuilder:
             logger.info("\nOperation cancelled by user")
             return False
 
+    def _load_existing_dataset(self) -> pd.DataFrame | None:
+        r"""
+        Load existing dataset from parquet file.
+
+        :return: Existing DataFrame, or None if file doesn't exist
+        :raises Exception: If file exists but cannot be read
+        """
+        if not self.output_path.exists():
+            return None
+
+        try:
+            existing_df = pd.read_parquet(self.output_path)
+            logger.info(f"Loaded existing dataset with {len(existing_df)} records")
+            return existing_df
+        except Exception as e:
+            logger.error(f"Failed to read existing dataset: {e}")
+            raise
+
     def _merge_with_existing(self, new_df: pd.DataFrame) -> pd.DataFrame:
         r"""
-        Merge new records with existing dataset.
+        Merge new records with existing dataset using configured strategy.
 
         :param new_df: DataFrame with new records
         :return: Merged DataFrame
         :raises ValueError: If merge_strategy is invalid or duplicates found in error mode
         """
-        if not self.output_path.exists():
+        # Check if existing dataset exists
+        existing_df = self._load_existing_dataset()
+        if existing_df is None:
             logger.info("No existing dataset found, creating new one")
             self.merge_stats["records_added"] = len(new_df)
             return new_df
 
+        # Get and apply merge strategy
+        strategy = MergeStrategyFactory.get_strategy(self.merge_strategy)
+        return strategy.merge(new_df, existing_df, self)
+
+    @staticmethod
+    def _record_to_dict(record: CameraRecord) -> dict:
+        r"""
+        Convert single CameraRecord to dictionary.
+
+        :param record: CameraRecord to convert
+        :return: Dictionary representation of record
+        """
+        return {
+            "camera_id": record.camera_id,
+            "model_name": record.model_name,
+            "display_name": record.display_name,
+            "description": record.description,
+            "source": record.source,
+            "category": record.category,
+            "product_category": record.product_category,
+            "product_series": record.product_series,
+            "image_urls": json.dumps(record.images),
+            "image_files": json.dumps(
+                record.image_files
+                if hasattr(record, "image_files") and record.image_files
+                else []
+            ),
+            "datasheet_url": record.datasheet_url,
+            "datasheet_file": record.datasheet_file
+            if hasattr(record, "datasheet_file")
+            else None,
+            "specifications": json.dumps(record.specifications_html),
+        }
+
+    def _serialize_records_to_dataframe(self) -> pd.DataFrame | None:
+        r"""
+        Convert CameraRecord objects to DataFrame.
+
+        :return: DataFrame with serialized records, or None if no records
+        """
+        if not self.records:
+            logger.warning("No records to save")
+            return None
+
+        logger.info(f"Serializing {len(self.records)} records to parquet...")
+
         try:
-            existing_df = pd.read_parquet(self.output_path)
-            logger.info(f"Loaded existing dataset with {len(existing_df)} records")
+            data = [self._record_to_dict(record) for record in self.records]
+            return pd.DataFrame(data)
         except Exception as e:
-            logger.error(f"Failed to read existing dataset: {e}")
-            raise
+            logger.error(f"Failed to serialize records: {e}")
+            return None
 
-        # Compute statistics before merging
-        existing_ids = set(existing_df["camera_id"])
-        new_ids = set(new_df["camera_id"])
-        duplicate_ids = existing_ids & new_ids
+    def _apply_merge_strategy(self, df: pd.DataFrame) -> pd.DataFrame | None:
+        r"""
+        Handle append mode and merge strategies.
 
-        if self.merge_strategy == "update":
-            # Concatenate and keep last (new) record for duplicates
-            merged = pd.concat([existing_df, new_df], ignore_index=True)
-            merged = merged.drop_duplicates(subset=["camera_id"], keep="last")
-            self.merge_stats["records_added"] = len(new_ids - existing_ids)
-            self.merge_stats["records_updated"] = len(duplicate_ids)
-            logger.info(
-                f"Merge strategy 'update': {self.merge_stats['records_updated']} "
-                f"records updated, {self.merge_stats['records_added']} records added"
-            )
+        :param df: DataFrame with new records
+        :return: DataFrame after applying merge strategy, or None if cancelled
+        """
+        if self.append:
+            logger.info("Append mode enabled, merging with existing dataset")
+            return self._merge_with_existing(df)
 
-        elif self.merge_strategy == "skip":
-            # Keep first (existing) record for duplicates
-            merged = pd.concat([existing_df, new_df], ignore_index=True)
-            merged = merged.drop_duplicates(subset=["camera_id"], keep="first")
-            self.merge_stats["records_added"] = len(new_ids - existing_ids)
-            self.merge_stats["records_skipped"] = len(duplicate_ids)
-            logger.info(
-                f"Merge strategy 'skip': {self.merge_stats['records_skipped']} "
-                f"records skipped, {self.merge_stats['records_added']} records added"
-            )
+        # Check if file exists and confirm overwrite
+        if not self._confirm_overwrite():
+            logger.warning("Operation cancelled by user")
+            return None
 
-        elif self.merge_strategy == "error":
-            # Raise error if duplicates found
-            if duplicate_ids:
-                logger.error(f"Found {len(duplicate_ids)} duplicate camera_ids")
-                logger.error(f"Duplicate IDs: {sorted(list(duplicate_ids)[:10])}")
-                if len(duplicate_ids) > 10:
-                    logger.error(f"... and {len(duplicate_ids) - 10} more")
-                raise ValueError(
-                    f"Duplicate camera_ids found: {len(duplicate_ids)} duplicates. "
-                    "Use --merge-strategy update or skip to handle duplicates."
-                )
-            merged = pd.concat([existing_df, new_df], ignore_index=True)
-            self.merge_stats["records_added"] = len(new_df)
-            logger.info(
-                f"Merge strategy 'error': {self.merge_stats['records_added']} records added"
-            )
+        self.merge_stats["records_added"] = len(df)
+        return df
 
+    def _persist_with_versioning(self, df: pd.DataFrame) -> bool:
+        r"""
+        Save DataFrame with version management.
+
+        :param df: DataFrame to save
+        :return: True if saved successfully
+        """
+        if self.version_mode == "auto":
+            return self._persist_auto_version(df)
+        elif self.version_mode == "manual":
+            return self._persist_manual_version(df)
         else:
-            raise ValueError(
-                f"Unknown merge strategy: {self.merge_strategy}. "
-                "Valid options: update, skip, error"
-            )
+            logger.error(f"Unknown version mode: {self.version_mode}")
+            return False
 
-        return merged.reset_index(drop=True)
+    def _persist_auto_version(self, df: pd.DataFrame) -> bool:
+        r"""
+        Save DataFrame with automatic version management.
+
+        :param df: DataFrame to save
+        :return: True if saved successfully
+        """
+        version = self.version_manager.create_version(
+            record_count=len(df),
+            manifest_path=self.manifest_path,
+            append_mode=self.append,
+            merge_strategy=self.merge_strategy if self.append else None,
+            records_added=self.merge_stats["records_added"],
+            records_updated=self.merge_stats["records_updated"],
+        )
+        versioned_path = self.version_manager.get_version_path(version)
+
+        # Save to versioned file
+        df.to_parquet(versioned_path, index=False, engine="pyarrow")
+        logger.success(f"Dataset saved as version {version}: {versioned_path}")
+
+        # Update symlinks
+        self.version_manager.update_symlinks(version)
+        logger.info(f"Symlinks updated to version {version}")
+
+        return True
+
+    def _persist_manual_version(self, df: pd.DataFrame) -> bool:
+        r"""
+        Save DataFrame with manual version number.
+
+        :param df: DataFrame to save
+        :return: True if saved successfully
+        """
+        if self.version_number is None:
+            logger.error("Manual version mode requires --version number")
+            return False
+
+        # Create version entry (side effect: adds to metadata, but we override version number below)
+        self.version_manager.create_version(
+            record_count=len(df),
+            manifest_path=self.manifest_path,
+            append_mode=self.append,
+            merge_strategy=self.merge_strategy if self.append else None,
+            records_added=self.merge_stats["records_added"],
+            records_updated=self.merge_stats["records_updated"],
+        )
+
+        # Override version number in metadata with user-specified version
+        metadata = self.version_manager.load_metadata()
+        metadata["current_version"] = self.version_number
+        metadata["versions"][-1]["version"] = self.version_number
+        self.version_manager.save_metadata(metadata)
+
+        # Use user-specified version number for file path and symlinks
+        versioned_path = self.version_manager.get_version_path(self.version_number)
+        df.to_parquet(versioned_path, index=False, engine="pyarrow")
+        logger.success(
+            f"Dataset saved as version {self.version_number}: {versioned_path}"
+        )
+
+        # Update symlinks to user-specified version
+        self.version_manager.update_symlinks(self.version_number)
+        logger.info(f"Symlinks updated to version {self.version_number}")
+
+        return True
+
+    def _persist_directly(self, df: pd.DataFrame) -> bool:
+        r"""
+        Save DataFrame directly without versioning.
+
+        :param df: DataFrame to save
+        :return: True if saved successfully
+        """
+        self.output_path.parent.mkdir(parents=True, exist_ok=True)
+        df.to_parquet(self.output_path, index=False, engine="pyarrow")
+        logger.success(f"Dataset saved to {self.output_path}")
+        return True
+
+    def _persist_dataframe(self, df: pd.DataFrame) -> bool:
+        r"""
+        Save DataFrame to disk with optional versioning.
+
+        :param df: DataFrame to save
+        :return: True if saved successfully
+        """
+        if self.version_manager:
+            return self._persist_with_versioning(df)
+        return self._persist_directly(df)
+
+    def _log_save_results(self, df: pd.DataFrame) -> None:
+        r"""
+        Log save operation results.
+
+        :param df: Saved DataFrame
+        """
+        logger.info(f"Total records in dataset: {len(df)}")
+        if self.append:
+            logger.info(
+                f"Merge statistics - Added: {self.merge_stats['records_added']}, "
+                f"Updated: {self.merge_stats['records_updated']}, "
+                f"Skipped: {self.merge_stats['records_skipped']}"
+            )
 
     def save_dataset(self) -> bool:
         r"""
         Save dataset to parquet file.
 
-        Handles append mode, merge strategies, and user confirmation.
+        Orchestrates the save process by delegating to specialized methods:
+        1. Serialize records to DataFrame
+        2. Apply merge strategy (if append mode)
+        3. Persist DataFrame (with or without versioning)
+        4. Log results
 
         :return: True if saved successfully
         """
-        if not self.records:
-            logger.warning("No records to save")
-            return False
-
-        logger.info(f"Serializing {len(self.records)} records to parquet...")
-
         try:
-            # Convert records to dictionaries
-            data = []
-            for record in self.records:
-                data.append(
-                    {
-                        "camera_id": record.camera_id,
-                        "model_name": record.model_name,
-                        "display_name": record.display_name,
-                        "description": record.description,
-                        "source": record.source,
-                        "category": record.category,
-                        "product_category": record.product_category,
-                        "product_series": record.product_series,
-                        "image_urls": json.dumps(record.images),
-                        "image_files": json.dumps(
-                            record.image_files
-                            if hasattr(record, "image_files") and record.image_files
-                            else []
-                        ),
-                        "datasheet_url": record.datasheet_url,
-                        "datasheet_file": record.datasheet_file
-                        if hasattr(record, "datasheet_file")
-                        else None,
-                        "specifications": json.dumps(record.specifications_html),
-                    }
-                )
+            # Step 1: Serialize records to DataFrame
+            df = self._serialize_records_to_dataframe()
+            if df is None:
+                return False
 
-            new_df = pd.DataFrame(data)
+            # Step 2: Apply merge strategy
+            df = self._apply_merge_strategy(df)
+            if df is None:
+                return False
 
-            # Handle append mode
-            if self.append:
-                logger.info("Append mode enabled, merging with existing dataset")
-                df = self._merge_with_existing(new_df)
-            else:
-                # Check if file exists and confirm overwrite
-                if not self._confirm_overwrite():
-                    logger.warning("Operation cancelled by user")
-                    return False
-                df = new_df
-                self.merge_stats["records_added"] = len(df)
+            # Step 3: Persist DataFrame
+            if not self._persist_dataframe(df):
+                return False
 
-            # Handle versioning
-            if self.version_manager:
-                # Create new version
-                if self.version_mode == "auto":
-                    version = self.version_manager.create_version(
-                        record_count=len(df),
-                        manifest_path=self.manifest_path,
-                        append_mode=self.append,
-                        merge_strategy=self.merge_strategy if self.append else None,
-                        records_added=self.merge_stats["records_added"],
-                        records_updated=self.merge_stats["records_updated"],
-                    )
-                    versioned_path = self.version_manager.get_version_path(version)
-
-                    # Save to versioned file
-                    df.to_parquet(versioned_path, index=False, engine="pyarrow")
-                    logger.success(
-                        f"Dataset saved as version {version}: {versioned_path}"
-                    )
-
-                    # Update symlinks
-                    self.version_manager.update_symlinks(version)
-                    logger.info(f"Symlinks updated to version {version}")
-
-                elif self.version_mode == "manual":
-                    if self.version_number is None:
-                        logger.error("Manual version mode requires --version number")
-                        return False
-
-                    version = self.version_manager.create_version(
-                        record_count=len(df),
-                        manifest_path=self.manifest_path,
-                        append_mode=self.append,
-                        merge_strategy=self.merge_strategy if self.append else None,
-                        records_added=self.merge_stats["records_added"],
-                        records_updated=self.merge_stats["records_updated"],
-                    )
-
-                    # Override version number
-                    metadata = self.version_manager.load_metadata()
-                    metadata["current_version"] = self.version_number
-                    metadata["versions"][-1]["version"] = self.version_number
-                    self.version_manager.save_metadata(metadata)
-
-                    versioned_path = self.version_manager.get_version_path(
-                        self.version_number
-                    )
-                    df.to_parquet(versioned_path, index=False, engine="pyarrow")
-                    logger.success(
-                        f"Dataset saved as version {self.version_number}: {versioned_path}"
-                    )
-
-                    # Update symlinks
-                    self.version_manager.update_symlinks(self.version_number)
-                    logger.info(f"Symlinks updated to version {self.version_number}")
-
-                else:
-                    logger.error(f"Unknown version mode: {self.version_mode}")
-                    return False
-
-            else:
-                # No versioning - save directly
-                self.output_path.parent.mkdir(parents=True, exist_ok=True)
-                df.to_parquet(self.output_path, index=False, engine="pyarrow")
-                logger.success(f"Dataset saved to {self.output_path}")
-
-            # Log results
-            logger.info(f"Total records in dataset: {len(df)}")
-            if self.append:
-                logger.info(
-                    f"Merge statistics - Added: {self.merge_stats['records_added']}, "
-                    f"Updated: {self.merge_stats['records_updated']}, "
-                    f"Skipped: {self.merge_stats['records_skipped']}"
-                )
+            # Step 4: Log results
+            self._log_save_results(df)
 
             return True
 
