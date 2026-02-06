@@ -40,8 +40,18 @@ pytest tests/test_dataset_versioning.py -v
 echo "Done..."
 echo "==============================================="
 
+echo "Running merge strategies tests"
+pytest tests/test_merge_strategies.py -v
+echo "Done..."
+echo "==============================================="
+
 echo "Running validation integration tests"
 pytest tests/test_validation_integration.py -v
+echo "Done..."
+echo "==============================================="
+
+echo "Running file validators tests"
+pytest tests/test_file_validators.py -v
 echo "Done..."
 echo "==============================================="
 
@@ -62,6 +72,11 @@ echo "==============================================="
 
 echo "Running identification async wrapper service tests"
 pytest tests/test_async_identification.py -v
+echo "Done..."
+echo "==============================================="
+
+echo "Running identification service unit tests"
+pytest tests/test_identification_service_unit.py -v
 echo "Done..."
 echo "==============================================="
 
