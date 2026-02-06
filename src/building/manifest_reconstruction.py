@@ -176,21 +176,13 @@ class ManifestReconstructor:
             logger.error(f"Failed to load product cache: {e}")
             return {}
 
-    def _build_manifest_structure(
-        self,
-        fs_structure: dict[str, dict[str, list[str]]],
-        product_cache: dict[str, dict],
-    ) -> dict:
+    def _create_manifest_skeleton(self) -> dict:
         r"""
-        Build manifest structure from filesystem and cache data.
+        Create empty manifest structure with metadata fields.
 
-        :param fs_structure: Filesystem structure from _scan_filesystem_structure
-        :param product_cache: Product cache from _load_product_cache
-        :return: Complete manifest dictionary
+        :return: Empty manifest dictionary with initialized counters
         """
-        logger.info("Building manifest structure...")
-
-        manifest = {
+        return {
             "scrape_timestamp": datetime.now(UTC).isoformat(),
             "reconstruction_timestamp": datetime.now(UTC).isoformat(),
             "reconstructed": True,
@@ -203,86 +195,224 @@ class ManifestReconstructor:
             "categories": {},
         }
 
+    def _create_category_skeleton(self) -> dict:
+        r"""
+        Create empty category structure with counters.
+
+        :return: Empty category dictionary
+        """
+        return {
+            "series_count": 0,
+            "product_count": 0,
+            "image_count": 0,
+            "pdf_count": 0,
+            "series": {},
+        }
+
+    def _create_series_skeleton(self) -> dict:
+        r"""
+        Create empty series structure with counters.
+
+        :return: Empty series dictionary
+        """
+        return {
+            "product_count": 0,
+            "image_count": 0,
+            "pdf_count": 0,
+            "specs_count": 0,
+            "products": [],
+        }
+
+    def _build_product_entry(
+        self,
+        camera_id: str,
+        product_data: dict,
+        category_name: str,
+        series_name: str,
+    ) -> dict:
+        r"""
+        Build product entry from cache data and filesystem info.
+
+        :param camera_id: Camera ID
+        :param product_data: Product metadata from cache
+        :param category_name: Category name for filesystem lookup
+        :param series_name: Series name for filesystem lookup
+        :return: Product entry dictionary
+        """
+        # Count images in filesystem
+        image_count = self._count_images(category_name, series_name, camera_id)
+
+        # Check for PDF file
+        has_pdf = self._check_pdf_exists(category_name, series_name, camera_id)
+
+        return {
+            "camera_id": camera_id,
+            "model_name": product_data.get("model_name", camera_id),
+            "image_urls": product_data.get("image_urls", []),
+            "image_count": image_count,
+            "has_datasheet": has_pdf or bool(product_data.get("datasheet_url")),
+            "datasheet_url": product_data.get("datasheet_url"),
+            "has_specs": bool(product_data.get("specifications_html")),
+            "specifications_html": product_data.get("specifications_html", {}),
+        }
+
+    def _update_series_stats(
+        self,
+        series_data: dict,
+        product_entry: dict,
+        product_data: dict,
+    ) -> None:
+        r"""
+        Update series-level statistics.
+
+        :param series_data: Series dictionary to update
+        :param product_entry: Product entry with counts
+        :param product_data: Product metadata from cache
+        """
+        series_data["product_count"] += 1
+
+        image_count = product_entry["image_count"]
+        if image_count > 0:
+            series_data["image_count"] += image_count
+
+        if product_entry["has_datasheet"]:
+            series_data["pdf_count"] += 1
+
+        if product_data.get("specifications_html"):
+            series_data["specs_count"] += 1
+
+    def _update_category_stats(self, category_data: dict, series_data: dict) -> None:
+        r"""
+        Update category-level statistics from series data.
+
+        :param category_data: Category dictionary to update
+        :param series_data: Series data to aggregate
+        """
+        category_data["series_count"] += 1
+        category_data["product_count"] += series_data["product_count"]
+        category_data["image_count"] += series_data["image_count"]
+        category_data["pdf_count"] += series_data["pdf_count"]
+
+    def _update_global_stats(
+        self,
+        manifest: dict,
+        series_data: dict,
+        product_data: dict,
+    ) -> None:
+        r"""
+        Update global manifest statistics.
+
+        :param manifest: Manifest dictionary to update
+        :param series_data: Series data with counts
+        :param product_data: Product metadata from cache
+        """
+        manifest["total_series"] += 1
+        manifest["total_products"] += series_data["product_count"]
+        manifest["total_images"] += series_data["image_count"]
+        manifest["total_pdfs_with_urls"] += series_data["pdf_count"]
+
+        if product_data.get("specifications_html"):
+            manifest["total_specs_populated"] += 1
+
+    def _build_product(
+        self,
+        camera_id: str,
+        product_cache: dict[str, dict],
+        category_name: str,
+        series_name: str,
+        series_data: dict,
+    ) -> None:
+        r"""
+        Build product entry and update series statistics.
+
+        :param camera_id: Camera ID
+        :param product_cache: Product metadata cache
+        :param category_name: Category name
+        :param series_name: Series name
+        :param series_data: Series dictionary to update
+        """
+        product_data = product_cache.get(camera_id, {})
+        product_entry = self._build_product_entry(
+            camera_id, product_data, category_name, series_name
+        )
+        series_data["products"].append(product_entry)
+        self._update_series_stats(series_data, product_entry, product_data)
+
+    def _build_series(
+        self,
+        series_name: str,
+        camera_ids: list[str],
+        product_cache: dict[str, dict],
+        category_name: str,
+        category_data: dict,
+    ) -> None:
+        r"""
+        Build series structure with all products.
+
+        :param series_name: Series name
+        :param camera_ids: List of camera IDs in series
+        :param product_cache: Product metadata cache
+        :param category_name: Category name
+        :param category_data: Category dictionary to update
+        """
+        series_data = self._create_series_skeleton()
+
+        for camera_id in camera_ids:
+            self._build_product(
+                camera_id, product_cache, category_name, series_name, series_data
+            )
+
+        category_data["series"][series_name] = series_data
+        self._update_category_stats(category_data, series_data)
+
+    def _build_category(
+        self,
+        category_name: str,
+        series_dict: dict[str, list[str]],
+        product_cache: dict[str, dict],
+        manifest: dict,
+    ) -> None:
+        r"""
+        Build category structure with all series.
+
+        :param category_name: Category name
+        :param series_dict: Dict mapping series names to camera ID lists
+        :param product_cache: Product metadata cache
+        :param manifest: Manifest dictionary to update
+        """
+        category_data = self._create_category_skeleton()
+
+        for series_name, camera_ids in series_dict.items():
+            self._build_series(
+                series_name, camera_ids, product_cache, category_name, category_data
+            )
+
+        manifest["categories"][category_name] = category_data
+        manifest["total_categories"] += 1
+
+    def _build_manifest_structure(
+        self,
+        fs_structure: dict[str, dict[str, list[str]]],
+        product_cache: dict[str, dict],
+    ) -> dict:
+        r"""
+        Build manifest structure from filesystem and cache data.
+
+        Orchestrates the build process by delegating to specialized methods:
+        1. Create manifest skeleton
+        2. Build each category with its series and products
+        3. Log final statistics
+
+        :param fs_structure: Filesystem structure from _scan_filesystem_structure
+        :param product_cache: Product cache from _load_product_cache
+        :return: Complete manifest dictionary
+        """
+        logger.info("Building manifest structure...")
+
+        manifest = self._create_manifest_skeleton()
+
         for category_name, series_dict in fs_structure.items():
-            manifest["categories"][category_name] = {
-                "series_count": 0,
-                "product_count": 0,
-                "image_count": 0,
-                "pdf_count": 0,
-                "series": {},
-            }
-            manifest["total_categories"] += 1
-
-            for series_name, camera_ids in series_dict.items():
-                manifest["categories"][category_name]["series"][series_name] = {
-                    "product_count": 0,
-                    "image_count": 0,
-                    "pdf_count": 0,
-                    "specs_count": 0,
-                    "products": [],
-                }
-                manifest["categories"][category_name]["series_count"] += 1
-                manifest["total_series"] += 1
-
-                for camera_id in camera_ids:
-                    # Try to get product metadata from cache
-                    product_data = product_cache.get(camera_id, {})
-
-                    # Count images in filesystem
-                    image_count = self._count_images(
-                        category_name, series_name, camera_id
-                    )
-
-                    # Check for PDF file
-                    has_pdf = self._check_pdf_exists(
-                        category_name, series_name, camera_id
-                    )
-
-                    product_entry = {
-                        "camera_id": camera_id,
-                        "model_name": product_data.get("model_name", camera_id),
-                        "image_urls": product_data.get("image_urls", []),
-                        "image_count": image_count,
-                        "has_datasheet": has_pdf
-                        or bool(product_data.get("datasheet_url")),
-                        "datasheet_url": product_data.get("datasheet_url"),
-                        "has_specs": bool(product_data.get("specifications_html")),
-                        "specifications_html": product_data.get(
-                            "specifications_html", {}
-                        ),
-                    }
-
-                    manifest["categories"][category_name]["series"][series_name][
-                        "products"
-                    ].append(product_entry)
-
-                    # Update counts
-                    manifest["categories"][category_name]["series"][series_name][
-                        "product_count"
-                    ] += 1
-                    manifest["categories"][category_name]["product_count"] += 1
-                    manifest["total_products"] += 1
-
-                    if image_count > 0:
-                        manifest["categories"][category_name]["series"][series_name][
-                            "image_count"
-                        ] += image_count
-                        manifest["categories"][category_name]["image_count"] += (
-                            image_count
-                        )
-                        manifest["total_images"] += image_count
-
-                    if has_pdf or product_data.get("datasheet_url"):
-                        manifest["categories"][category_name]["series"][series_name][
-                            "pdf_count"
-                        ] += 1
-                        manifest["total_pdfs_with_urls"] += 1
-
-                    if product_data.get("specifications_html"):
-                        manifest["categories"][category_name]["series"][series_name][
-                            "specs_count"
-                        ] += 1
-                        manifest["total_specs_populated"] += 1
+            self._build_category(category_name, series_dict, product_cache, manifest)
 
         logger.info(
             f"Built manifest with {manifest['total_products']} products, "
