@@ -412,20 +412,16 @@ class DatasetValidator:
 
         logger.success("Manifest comparison complete")
 
-    def print_report(self, verbose: bool = False) -> None:
-        r"""
-        Print comprehensive validation report.
-
-        :param verbose: Show detailed errors and warnings
-        """
+    def _print_header(self) -> None:
+        """Print report header with dataset paths."""
         print("\n" + "=" * 80)
         print("DATASET VALIDATION REPORT")
         print("=" * 80)
-
         print(f"\nDataset: {self.parquet_path}")
         print(f"Manifest: {self.manifest_path}")
 
-        # Display version information if available
+    def _print_version_info(self) -> None:
+        """Print version information section if available."""
         if self.version_number is not None and self.version_info is not None:
             print("\n--- VERSION INFORMATION ---")
             print(f"Version: {self.version_number}")
@@ -444,10 +440,14 @@ class DatasetValidator:
                     f"Parent Version: {self.version_info.get('parent_version', 'N/A')}"
                 )
 
+    def _print_validation_summary(self) -> None:
+        """Print validation summary with error and warning counts."""
         print("\n--- VALIDATION SUMMARY ---")
         print(f"Errors: {len(self.errors)}")
         print(f"Warnings: {len(self.warnings)}")
 
+    def _print_coverage_metrics(self) -> None:
+        """Print coverage metrics section."""
         print("\n--- COVERAGE METRICS ---")
         print(f"Total Records: {self.stats.get('total_records', 0)}")
         print(
@@ -460,19 +460,27 @@ class DatasetValidator:
             f"Records with Specs: {self.stats.get('records_with_specs', 0)} ({self.stats.get('specs_coverage', 'N/A')})"
         )
 
+    def _print_file_integrity(self) -> None:
+        """Print file integrity section."""
         print("\n--- FILE INTEGRITY ---")
         print(f"Missing Images: {self.stats.get('missing_images', 0)}")
         print(f"Invalid Image Format: {self.stats.get('invalid_format_images', 0)}")
         print(f"Missing PDFs: {self.stats.get('missing_pdfs', 0)}")
 
+    def _print_data_quality(self) -> None:
+        """Print data quality section."""
         print("\n--- DATA QUALITY ---")
         print(f"Duplicate IDs: {self.stats.get('duplicate_ids', 0)}")
         print(f"Records without Media: {self.stats.get('no_media_records', 0)}")
 
+    def _print_manifest_comparison(self) -> None:
+        """Print manifest comparison section."""
         print("\n--- MANIFEST COMPARISON ---")
         print(f"Expected Products: {self.stats.get('manifest_products', 'N/A')}")
         print(f"Actual Products: {self.stats.get('total_records', 'N/A')}")
 
+    def _print_validation_result(self) -> None:
+        """Print validation pass/fail result."""
         if len(self.errors) == 0 and len(self.warnings) == 0:
             print("\n✅ Dataset validation passed!")
         elif len(self.errors) == 0:
@@ -480,6 +488,8 @@ class DatasetValidator:
         else:
             print(f"\n❌ Dataset has {len(self.errors)} error(s)")
 
+    def _print_detailed_issues(self, verbose: bool) -> None:
+        """Print detailed errors and warnings in verbose mode."""
         if verbose and (self.errors or self.warnings):
             if self.errors:
                 print("\n--- ERRORS (first 10) ---")
@@ -495,6 +505,32 @@ class DatasetValidator:
                 if len(self.warnings) > 10:
                     print(f"  ... and {len(self.warnings) - 10} more")
 
+    def print_report(self, verbose: bool = False) -> None:
+        r"""
+        Print comprehensive validation report.
+
+        Orchestrates report generation by delegating to specialized print methods:
+        1. Print header
+        2. Print version information (if available)
+        3. Print validation summary
+        4. Print coverage metrics
+        5. Print file integrity stats
+        6. Print data quality stats
+        7. Print manifest comparison
+        8. Print validation result
+        9. Print detailed issues (if verbose)
+
+        :param verbose: Show detailed errors and warnings
+        """
+        self._print_header()
+        self._print_version_info()
+        self._print_validation_summary()
+        self._print_coverage_metrics()
+        self._print_file_integrity()
+        self._print_data_quality()
+        self._print_manifest_comparison()
+        self._print_validation_result()
+        self._print_detailed_issues(verbose)
         print("=" * 80 + "\n")
 
     def _setup_validation(self) -> bool:
