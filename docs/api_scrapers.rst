@@ -18,3 +18,29 @@ Axis Communications
    :members:
    :undoc-members:
    :show-inheritance:
+
+HikVision
+---------
+
+.. automodule:: src.scrapers.hikvision
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Download Managers
+-----------------
+
+.. automodule:: src.scrapers.managers.download_manager
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Scraping Pipeline
+-----------------
+
+Main entry point for the scraping pipeline.
+
+.. automodule:: src.scraping.main
+   :members:
+   :undoc-members:
+   :show-inheritance:

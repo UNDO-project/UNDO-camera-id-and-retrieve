@@ -24,3 +24,11 @@ Manifest recording
    :members:
    :undoc-members:
    :show-inheritance:
+
+Versioning
+----------
+
+.. automodule:: src.storage.versioning
+   :members:
+   :undoc-members:
+   :show-inheritance:
