@@ -357,15 +357,9 @@ class DatasetBuilder:
             "product_category": record.product_category,
             "product_series": record.product_series,
             "image_urls": json.dumps(record.images),
-            "image_files": json.dumps(
-                record.image_files
-                if hasattr(record, "image_files") and record.image_files
-                else []
-            ),
+            "image_files": json.dumps(record.image_files),
             "datasheet_url": record.datasheet_url,
-            "datasheet_file": record.datasheet_file
-            if hasattr(record, "datasheet_file")
-            else None,
+            "datasheet_file": record.datasheet_file,
             "specifications": json.dumps(record.specifications_html),
         }
 
