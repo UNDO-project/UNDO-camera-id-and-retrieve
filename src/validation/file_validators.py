@@ -1,5 +1,6 @@
 """File validators for dataset validation."""
 
+import json
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -57,8 +58,6 @@ class ImageFileValidator(FileValidator):
         :param row: DataFrame row as dictionary
         :param row_idx: Row index for error reporting
         """
-        import json
-
         image_files_str = row.get("image_files")
         if not image_files_str or image_files_str == "[]":
             return
