@@ -14,10 +14,11 @@ runtime.
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Tuple
+from typing import Any
 
 import numpy as np
 from loguru import logger
+from PIL import Image
 
 
 _CLIP_MODEL_NAME = "ViT-B-32"
@@ -42,7 +43,7 @@ def _select_device(torch_module: Any) -> str:
 
 
 @lru_cache(maxsize=1)
-def _get_clip_components() -> Tuple[object, object, str]:
+def _get_clip_components() -> tuple[object, object, str]:
     r"""Load and cache the CLIP model and preprocessing pipeline.
 
     This function imports ``torch`` and ``open_clip`` lazily and creates
@@ -75,10 +76,11 @@ def _get_clip_components() -> Tuple[object, object, str]:
     return model, preprocess, device
 
 
-def embed_image(image_path: Path | str) -> np.ndarray:
+def embed_image(image: Path | str | Image.Image) -> np.ndarray:
     r"""Compute an embedding vector for the given image using CLIP.
 
-    The image is preprocessed and passed through a CLIP model. The output
+    Accepts either a filesystem path or an in-memory PIL Image. The
+    image is preprocessed and passed through a CLIP model. The output
     embedding is L2-normalized and returned as a one-dimensional
     :class:`numpy.ndarray` of type ``float32``.
 
@@ -88,26 +90,26 @@ def embed_image(image_path: Path | str) -> np.ndarray:
     2. Apple MPS backend if available.
     3. CPU otherwise.
 
-    :param image_path: Path to the image to embed
+    :param image: Path to an image file, or a PIL Image instance
     :return: Normalized embedding vector representation
-    :raises FileNotFoundError: If the image file does not exist
+    :raises FileNotFoundError: If a path is given and the file does not exist
     :raises RuntimeError: If embedding dependencies are missing
     """
-    from PIL import Image  # Imported lazily; Pillow is a project dependency
-
-    image_path = Path(image_path)
-    if not image_path.exists():
-        raise FileNotFoundError(f"Image not found for embedding: {image_path}")
+    if isinstance(image, Image.Image):
+        pil_image = image.convert("RGB")
+    else:
+        image_path = Path(image)
+        if not image_path.exists():
+            raise FileNotFoundError(f"Image not found for embedding: {image_path}")
+        pil_image = Image.open(image_path).convert("RGB")
 
     model, preprocess, device = _get_clip_components()
-
-    image = Image.open(image_path).convert("RGB")
 
     # Imports only needed when embeddings are used
     import torch  # type: ignore[import]
 
     with torch.no_grad():
-        tensor = preprocess(image).unsqueeze(0)
+        tensor = preprocess(pil_image).unsqueeze(0)
         if device != "cpu":
             tensor = tensor.to(device)
         features = model.encode_image(tensor)

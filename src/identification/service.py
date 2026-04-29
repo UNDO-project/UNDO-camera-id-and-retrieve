@@ -8,6 +8,7 @@ images.
 from dataclasses import dataclass
 from pathlib import Path
 
+import numpy as np
 from loguru import logger
 from PIL import Image
 
@@ -224,25 +225,16 @@ class IdentificationService:
 
         return crops
 
-    def _embed_crop(self, crop_info: CropInfo, image_path: Path, idx: int):
+    @staticmethod
+    def _embed_crop(crop_info: CropInfo) -> np.ndarray:
         r"""
         Compute embedding for a cropped patch.
 
         :param crop_info: Crop information
-        :param image_path: Original image path for temp file naming
-        :param idx: Detection index
         :return: Embedding vector
         """
-        # Use crop_path if saved, otherwise embed from PIL image
-        if crop_info.crop_path is not None:
-            return embed_image(crop_info.crop_path)
-        else:
-            # Fallback: save to a temporary file under crop_dir
-            tmp_path = self.crop_dir / f"{image_path.stem}_det{idx}_tmp.png"
-            crop_info.crop.save(tmp_path)
-            query_vec = embed_image(tmp_path)
-            tmp_path.unlink(missing_ok=True)
-            return query_vec
+        # Embed the in-memory PIL crop directly; no disk round-trip needed.
+        return embed_image(crop_info.crop)
 
     def _filter_and_enrich_matches(
         self,
@@ -276,8 +268,6 @@ class IdentificationService:
     def _retrieve_matches_for_crop(
         self,
         crop_info: CropInfo,
-        image_path: Path,
-        idx: int,
         top_k: int,
         similarity_threshold: float,
     ) -> RetrievalResult:
@@ -285,24 +275,18 @@ class IdentificationService:
         Retrieve catalog matches for a single crop.
 
         :param crop_info: Crop information
-        :param image_path: Original image path
-        :param idx: Detection index
         :param top_k: Maximum number of matches
         :param similarity_threshold: Minimum similarity threshold
         :return: Retrieval result for this detection
         """
-        # Compute embedding
-        query_vec = self._embed_crop(crop_info, image_path, idx)
+        query_vec = self._embed_crop(crop_info)
 
-        # Run nearest-neighbor search in the catalog index
         matches = self.index.search(query_vec, top_k=top_k)
 
-        # Filter by similarity threshold and enrich with full records
         filtered_matches = self._filter_and_enrich_matches(
             matches, similarity_threshold
         )
 
-        # Update detection with crop path if saved
         if crop_info.crop_path is not None:
             crop_info.detection.crop_path = crop_info.crop_path
 
@@ -358,11 +342,9 @@ class IdentificationService:
 
         # Step 4: Retrieve matches for each crop
         results: list[RetrievalResult] = []
-        for idx, crop_info in enumerate(crops):
+        for crop_info in crops:
             result = self._retrieve_matches_for_crop(
                 crop_info,
-                image_path,
-                idx,
                 top_k,
                 similarity_threshold,
             )
