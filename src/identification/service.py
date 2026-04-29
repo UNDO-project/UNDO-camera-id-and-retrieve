@@ -7,7 +7,6 @@ images.
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 from loguru import logger
 from PIL import Image
@@ -56,12 +55,12 @@ class IdentificationService:
 
     def __init__(
         self,
-        model_path: Optional[Path | str] = None,
-        parquet_path: Optional[Path | str] = None,
-        embeddings_path: Optional[Path | str] = None,
+        model_path: Path | str | None = None,
+        parquet_path: Path | str | None = None,
+        embeddings_path: Path | str | None = None,
         conf_threshold: float = 0.25,
         min_similarity: float = 0.3,
-        crop_dir: Optional[Path | str] = None,
+        crop_dir: Path | str | None = None,
         save_crops: bool = True,
     ) -> None:
         r"""Initialize identification service.
@@ -316,7 +315,7 @@ class IdentificationService:
         self,
         image_path: Path | str,
         top_k: int = 5,
-        min_similarity: Optional[float] = None,
+        min_similarity: float | None = None,
     ) -> list[RetrievalResult]:
         r"""Identify cameras in the given image.
 
