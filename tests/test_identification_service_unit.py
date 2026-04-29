@@ -210,3 +210,127 @@ class TestValidateImagePath:
 
         with pytest.raises(FileNotFoundError):
             service._validate_image_path(image_path)
+
+
+def _make_detection(x_min: int, y_min: int, x_max: int, y_max: int) -> CameraDetection:
+    """Build a minimal CameraDetection for crop tests."""
+    return CameraDetection(
+        image_path=None,
+        crop_path=None,
+        bbox=BoundingBox(x_min=x_min, y_min=y_min, x_max=x_max, y_max=y_max),
+        confidence=0.9,
+        label="camera",
+        class_id=0,
+    )
+
+
+class TestExtractSingleCrop:
+    """Tests for _extract_single_crop."""
+
+    @pytest.fixture
+    def service(self, tmp_path: Path) -> IdentificationService:
+        service = IdentificationService.__new__(IdentificationService)
+        service.save_crops = False
+        service.crop_dir = tmp_path / "crops"
+        return service
+
+    def test_returns_crop_info_for_valid_bbox(self, service, tmp_path):
+        image = Image.new("RGB", (200, 200), color="red")
+        detection = _make_detection(10, 20, 110, 120)
+
+        crop_info = service._extract_single_crop(
+            image, detection, idx=0, image_path=tmp_path / "src.jpg"
+        )
+
+        assert crop_info is not None
+        assert crop_info.detection is detection
+        assert crop_info.crop.size == (100, 100)
+        assert crop_info.clamped_bbox.x_min == 10
+        assert crop_info.clamped_bbox.x_max == 110
+        assert crop_info.crop_path is None  # save_crops=False
+
+    def test_clamps_oversized_bbox(self, service, tmp_path):
+        image = Image.new("RGB", (50, 50))
+        # bbox extends past image boundaries; should be clamped to (0..50, 0..50)
+        detection = _make_detection(-10, -10, 100, 100)
+
+        crop_info = service._extract_single_crop(
+            image, detection, idx=0, image_path=tmp_path / "src.jpg"
+        )
+
+        assert crop_info is not None
+        assert crop_info.clamped_bbox.x_min == 0
+        assert crop_info.clamped_bbox.y_min == 0
+        assert crop_info.clamped_bbox.x_max == 50
+        assert crop_info.clamped_bbox.y_max == 50
+
+    def test_returns_none_for_degenerate_bbox(self, service, tmp_path):
+        image = Image.new("RGB", (200, 200))
+        # zero-width bbox
+        detection = _make_detection(50, 50, 50, 100)
+
+        crop_info = service._extract_single_crop(
+            image, detection, idx=0, image_path=tmp_path / "src.jpg"
+        )
+
+        assert crop_info is None
+
+    def test_saves_crop_when_enabled(self, tmp_path):
+        service = IdentificationService.__new__(IdentificationService)
+        service.save_crops = True
+        service.crop_dir = tmp_path / "crops"
+        service.crop_dir.mkdir()
+
+        image = Image.new("RGB", (200, 200))
+        detection = _make_detection(10, 20, 110, 120)
+        source_path = tmp_path / "frame.jpg"
+
+        crop_info = service._extract_single_crop(
+            image, detection, idx=3, image_path=source_path
+        )
+
+        assert crop_info is not None
+        assert crop_info.crop_path == service.crop_dir / "frame_det3.png"
+        assert crop_info.crop_path.exists()
+
+
+class TestExtractDetectionCrops:
+    """Tests for _extract_detection_crops."""
+
+    @pytest.fixture
+    def service(self, tmp_path: Path) -> IdentificationService:
+        service = IdentificationService.__new__(IdentificationService)
+        service.save_crops = False
+        service.crop_dir = tmp_path / "crops"
+        return service
+
+    @pytest.fixture
+    def image_path(self, tmp_path: Path) -> Path:
+        path = tmp_path / "scene.jpg"
+        Image.new("RGB", (200, 200), color="blue").save(path)
+        return path
+
+    def test_returns_crops_for_each_valid_detection(self, service, image_path):
+        detections = [
+            _make_detection(10, 10, 50, 50),
+            _make_detection(60, 60, 100, 100),
+        ]
+
+        crops = service._extract_detection_crops(image_path, detections)
+
+        assert len(crops) == 2
+
+    def test_skips_degenerate_detections(self, service, image_path):
+        detections = [
+            _make_detection(10, 10, 50, 50),
+            _make_detection(60, 60, 60, 100),  # zero-width — skipped
+            _make_detection(100, 100, 150, 150),
+        ]
+
+        crops = service._extract_detection_crops(image_path, detections)
+
+        assert len(crops) == 2
+
+    def test_returns_empty_for_empty_detections(self, service, image_path):
+        crops = service._extract_detection_crops(image_path, [])
+        assert crops == []
