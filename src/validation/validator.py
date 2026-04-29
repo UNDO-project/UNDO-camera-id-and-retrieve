@@ -9,7 +9,11 @@ from loguru import logger
 
 from src.config import paths
 from src.storage.manifest import ManifestRecorder
-from src.validation.file_validators import ImageFileValidator, PdfFileValidator
+from src.validation.file_validators import (
+    FileValidator,
+    ImageFileValidator,
+    PdfFileValidator,
+)
 
 
 class DatasetValidator:
@@ -260,19 +264,20 @@ class DatasetValidator:
 
         logger.info("Layer 2: Validating file integrity...")
 
-        # Initialize validators
-        image_validator = ImageFileValidator(project_root, self)
-        pdf_validator = PdfFileValidator(project_root, self)
+        validators: list[FileValidator] = [
+            ImageFileValidator(project_root),
+            PdfFileValidator(project_root),
+        ]
 
-        # Validate each row
         for idx, row in self.df.iterrows():
             row_dict = row.to_dict()
-            image_validator.validate(row_dict, idx)
-            pdf_validator.validate(row_dict, idx)
+            for validator in validators:
+                validator.validate(row_dict, idx)
 
-        # Update statistics
-        image_validator.update_stats()
-        pdf_validator.update_stats()
+        # Collect errors and stats from each validator
+        for validator in validators:
+            self.errors.extend(validator.errors)
+            self.stats.update(validator.get_stats())
 
         logger.success("File integrity validation complete")
 
