@@ -55,8 +55,18 @@ pytest tests/test_file_validators.py -v
 echo "Done..."
 echo "==============================================="
 
+echo "Running validation report tests"
+pytest tests/test_validation_report.py -v
+echo "Done..."
+echo "==============================================="
+
 echo "Running download cache tests"
 pytest tests/test_download_cache.py -v
+echo "Done..."
+echo "==============================================="
+
+echo "Running download cache strategy tests"
+pytest tests/test_download_cache_strategy.py -v
 echo "Done..."
 echo "==============================================="
 
