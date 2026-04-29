@@ -374,13 +374,8 @@ class DatasetBuilder:
             return None
 
         logger.info(f"Serializing {len(self.records)} records to parquet...")
-
-        try:
-            data = [self._record_to_dict(record) for record in self.records]
-            return pd.DataFrame(data)
-        except Exception as e:
-            logger.error(f"Failed to serialize records: {e}")
-            return None
+        data = [self._record_to_dict(record) for record in self.records]
+        return pd.DataFrame(data)
 
     def _apply_merge_strategy(self, df: pd.DataFrame) -> pd.DataFrame | None:
         r"""

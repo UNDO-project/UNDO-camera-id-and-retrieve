@@ -101,20 +101,22 @@ class ImageFileValidator(FileValidator):
         try:
             with open(full_path, "rb") as f:
                 header = f.read(4)
-                if header != b"RIFF":
-                    self.invalid_format_count += 1
-                    self.validator.errors.append(
-                        {
-                            "type": "invalid_image_format",
-                            "path": img_path,
-                        }
-                    )
-        except Exception as e:
+        except OSError as e:
             self.validator.errors.append(
                 {
                     "type": "cannot_read_image",
                     "path": img_path,
                     "error": str(e),
+                }
+            )
+            return
+
+        if header != b"RIFF":
+            self.invalid_format_count += 1
+            self.validator.errors.append(
+                {
+                    "type": "invalid_image_format",
+                    "path": img_path,
                 }
             )
 
@@ -148,7 +150,7 @@ class PdfFileValidator(FileValidator):
         :param row: DataFrame row as dictionary
         :param row_idx: Row index for error reporting
         """
-        pdf_file = row.get("datasheet_file")
+        pdf_file: str | None = row.get("datasheet_file")
         if not pdf_file:
             return
 
@@ -173,18 +175,20 @@ class PdfFileValidator(FileValidator):
         try:
             with open(full_path, "rb") as f:
                 header = f.read(4)
-                if header != b"%PDF":
-                    self.invalid_format_count += 1
-                    self.validator.errors.append(
-                        {"type": "invalid_pdf_format", "path": pdf_path}
-                    )
-        except Exception as e:
+        except OSError as e:
             self.validator.errors.append(
                 {
                     "type": "cannot_read_pdf",
                     "path": pdf_path,
                     "error": str(e),
                 }
+            )
+            return
+
+        if header != b"%PDF":
+            self.invalid_format_count += 1
+            self.validator.errors.append(
+                {"type": "invalid_pdf_format", "path": pdf_path}
             )
 
     def update_stats(self) -> None:
