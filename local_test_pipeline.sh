@@ -20,6 +20,11 @@ pytest tests/test_hikvision_extraction.py -v
 echo "Done..."
 echo "==============================================="
 
+echo "Running Hikvision Playwright helper tests"
+pytest tests/test_hikvision_playwright_helpers.py -v
+echo "Done..."
+echo "==============================================="
+
 echo "Running configuration tests"
 pytest tests/test_config.py -v
 echo "Done..."
@@ -27,6 +32,11 @@ echo "==============================================="
 
 echo "Running dataset creation tests"
 pytest tests/test_dataset_creation.py -v
+echo "Done..."
+echo "==============================================="
+
+echo "Running builder helper tests"
+pytest tests/test_builder_helpers.py -v
 echo "Done..."
 echo "==============================================="
 
@@ -47,6 +57,11 @@ echo "==============================================="
 
 echo "Running validation integration tests"
 pytest tests/test_validation_integration.py -v
+echo "Done..."
+echo "==============================================="
+
+echo "Running validator orchestration tests"
+pytest tests/test_validator_orchestration.py -v
 echo "Done..."
 echo "==============================================="
 
