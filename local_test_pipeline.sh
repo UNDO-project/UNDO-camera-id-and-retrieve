@@ -70,6 +70,11 @@ pytest tests/test_download_cache_strategy.py -v
 echo "Done..."
 echo "==============================================="
 
+echo "Running product detail extractor tests"
+pytest tests/test_product_detail_extractor.py -v
+echo "Done..."
+echo "==============================================="
+
 echo "Running detector tests"
 pytest tests/test_detector.py -v
 echo "Done..."
