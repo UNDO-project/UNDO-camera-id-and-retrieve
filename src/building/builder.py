@@ -118,54 +118,14 @@ class DatasetBuilder:
             for category_name, category_data in manifest.get("categories", {}).items():
                 for series_name, series_data in category_data.get("series", {}).items():
                     for product_info in series_data.get("products", []):
-                        camera_id = product_info.get("camera_id")
-                        model_name = product_info.get("model_name")
-
-                        if not camera_id or not model_name:
-                            logger.warning(
-                                "Skipping product with missing camera_id or model_name"
-                            )
+                        record = self._build_camera_record(
+                            category_name, series_name, product_info
+                        )
+                        if record is None:
                             continue
-
-                        # Find image files and detect vendor
-                        image_files, vendor_source = self._find_image_files_and_vendor(
-                            category_name, series_name, camera_id
-                        )
-
-                        # Find PDF file
-                        pdf_file = self._find_pdf_file(
-                            category_name, series_name, camera_id
-                        )
-
-                        # Load specifications from manifest
-                        specifications_html = self._load_specifications_from_manifest(
-                            product_info
-                        )
-
-                        # Create record
-                        image_urls = product_info.get("image_urls", [])
-                        datasheet_url = product_info.get("datasheet_url")
-                        record = CameraRecord(
-                            camera_id=camera_id,
-                            model_name=model_name,
-                            display_name=model_name,
-                            description=None,
-                            specifications={},
-                            source=vendor_source or "Unknown",
-                            category="Network Camera",
-                            product_category=category_name,
-                            product_series=series_name,
-                            images=image_urls,
-                            image_url=None,
-                            image_files=image_files,
-                            datasheet_url=datasheet_url,
-                            datasheet_file=pdf_file,
-                            specifications_html=specifications_html,
-                        )
-
                         self.records.append(record)
                         total_products += 1
-                        logger.debug(f"Created record for {camera_id}")
+                        logger.debug(f"Created record for {record.camera_id}")
 
             logger.info(f"Built dataset with {total_products} products")
             return True
@@ -173,6 +133,54 @@ class DatasetBuilder:
         except Exception as e:
             logger.error(f"Failed to build dataset: {e}")
             return False
+
+    def _build_camera_record(
+        self,
+        category_name: str,
+        series_name: str,
+        product_info: dict,
+    ) -> CameraRecord | None:
+        r"""
+        Build a single :class:`CameraRecord` from a manifest product entry.
+
+        Returns ``None`` (and logs a warning) when the required identity
+        fields are missing.
+
+        :param category_name: Product category
+        :param series_name: Product series
+        :param product_info: Product entry from manifest
+        :return: A populated CameraRecord, or None if the product entry
+            is missing required fields
+        """
+        camera_id = product_info.get("camera_id")
+        model_name = product_info.get("model_name")
+        if not camera_id or not model_name:
+            logger.warning("Skipping product with missing camera_id or model_name")
+            return None
+
+        image_files, vendor_source = self._find_image_files_and_vendor(
+            category_name, series_name, camera_id
+        )
+        pdf_file = self._find_pdf_file(category_name, series_name, camera_id)
+        specifications_html = self._load_specifications_from_manifest(product_info)
+
+        return CameraRecord(
+            camera_id=camera_id,
+            model_name=model_name,
+            display_name=model_name,
+            description=None,
+            specifications={},
+            source=vendor_source or "Unknown",
+            category="Network Camera",
+            product_category=category_name,
+            product_series=series_name,
+            images=product_info.get("image_urls", []),
+            image_url=None,
+            image_files=image_files,
+            datasheet_url=product_info.get("datasheet_url"),
+            datasheet_file=pdf_file,
+            specifications_html=specifications_html,
+        )
 
     @staticmethod
     def _find_image_files_and_vendor(
