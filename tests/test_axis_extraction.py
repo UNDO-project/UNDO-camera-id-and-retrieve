@@ -28,17 +28,18 @@ def test_product_extraction() -> None:
 
     soup = BeautifulSoup(html_content, "html.parser")
     scraper = AxisCameraScraper()
+    extractor = scraper.product_extractor
 
     # Test image extraction
     logger.info("Testing carousel image extraction...")
-    images = scraper._extract_carousel_images(soup)
+    images = extractor._extract_images(soup)
     logger.info(f"  Found {len(images)} carousel images")
     for idx, img_url in enumerate(images, 1):
         logger.info(f"    {idx}. {img_url[:80]}...")
 
     # Test datasheet extraction
     logger.info("Testing datasheet URL extraction...")
-    datasheet = scraper._extract_datasheet_url(soup)
+    datasheet = extractor._extract_datasheet_url(soup)
     if datasheet:
         logger.info(f"  Found datasheet: {datasheet}")
     else:
@@ -46,7 +47,7 @@ def test_product_extraction() -> None:
 
     # Test specifications extraction
     logger.info("Testing specifications extraction...")
-    specs = scraper._extract_specifications_tables(soup)
+    specs = extractor._extract_specifications(soup)
     logger.info(f"  Found {len(specs)} specification sections")
     for section, section_specs in specs.items():
         logger.info(f"    [{section}] - {len(section_specs)} specs")

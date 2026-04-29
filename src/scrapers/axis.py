@@ -4,10 +4,74 @@ from bs4 import BeautifulSoup
 from loguru import logger
 
 from src.config import axis
-from src.models.camera import CategoryLink, CameraRecord
+from src.models.camera import CameraRecord, CategoryLink
 from src.scrapers.base import CameraScraperBase
-from src.scrapers.managers import DownloadManager, RelativeURLNormalizer
+from src.scrapers.managers import (
+    DownloadManager,
+    ProductDetailExtractor,
+    RelativeURLNormalizer,
+)
 from src.storage.download_cache import DownloadCache
+
+
+class _AxisProductDetailExtractor(ProductDetailExtractor):
+    """Axis-specific selectors for product detail extraction."""
+
+    def _extract_name(self, soup: BeautifulSoup) -> str | None:
+        h1_tag = soup.find("h1", class_="title-attention")
+        if h1_tag:
+            return h1_tag.get_text(strip=True)
+
+        h1_tag = soup.find("h1")
+        if h1_tag:
+            return h1_tag.get_text(strip=True)
+
+        return None
+
+    def _extract_images(self, soup: BeautifulSoup) -> list[str]:
+        images: list[str] = []
+        carousel = soup.find("div", class_="product-img-carousel--main")
+        if not carousel:
+            return images
+
+        for img in carousel.find_all("img"):
+            src = img.get("src")
+            if src:
+                images.append(src)
+        return images
+
+    def _extract_datasheet_url(self, soup: BeautifulSoup) -> str | None:
+        for link in soup.find_all("a"):
+            link_text = link.get_text(strip=True).lower()
+            if "datasheet" in link_text and "pdf" in link_text:
+                href = link.get("href")
+                if href:
+                    return href
+        return None
+
+    def _extract_specifications(self, soup: BeautifulSoup) -> dict[str, dict[str, str]]:
+        specifications: dict[str, dict[str, str]] = {}
+
+        for table in soup.find_all("table", class_="ac-table"):
+            caption = table.find("caption", class_="ac-table__caption")
+            section_name = caption.get_text(strip=True) if caption else "Unknown"
+
+            tbody = table.find("tbody", class_="ac-table__body")
+            if not tbody:
+                continue
+
+            section_specs: dict[str, str] = {}
+            for row in tbody.find_all("tr", class_="ac-table__row"):
+                cells = row.find_all("td", class_="ac-table__cell")
+                if len(cells) >= 2:
+                    spec_name = cells[0].get_text(strip=True)
+                    spec_value = cells[1].get_text(strip=True)
+                    section_specs[spec_name] = spec_value
+
+            if section_specs:
+                specifications[section_name] = section_specs
+
+        return specifications
 
 
 class AxisCameraScraper(CameraScraperBase):
@@ -32,6 +96,7 @@ class AxisCameraScraper(CameraScraperBase):
         self.download_manager = DownloadManager(
             url_normalizer=self.url_normalizer, download_cache=download_cache
         )
+        self.product_extractor = _AxisProductDetailExtractor(self, download_cache)
 
     async def fetch_categories(self) -> list[CategoryLink]:
         r"""
@@ -162,8 +227,9 @@ class AxisCameraScraper(CameraScraperBase):
     ) -> CameraRecord:
         r"""
         Fetch detailed information about a specific product from its page.
-        Extracts product name, carousel images, datasheet link, and technical specifications.
-        Uses cache to skip re-fetching product pages.
+
+        Delegates HTML extraction and caching to the product extractor;
+        assembles the vendor-specific :class:`CameraRecord` here.
 
         :param product_url: Relative URL to the product page
         :param category_name: Top-level category (e.g., "DOME CAMERAS")
@@ -171,172 +237,23 @@ class AxisCameraScraper(CameraScraperBase):
         :return: CameraRecord with detailed product information
         """
         product_page_url = f"{axis.base_url}{product_url}"
+        details = await self.product_extractor.extract(product_page_url)
 
-        # Check cache first
-        if self.download_cache and self.download_cache.has_cached_product(
-            product_page_url
-        ):
-            logger.info(f"Using cached product details for {product_url}")
-            cached_data = self.download_cache.get_cached_product(product_page_url)
-            product_name = cached_data["model_name"]
-            images = cached_data["image_urls"]
-            datasheet_url = cached_data["datasheet_url"]
-            specifications_html = cached_data["specifications_html"]
-        else:
-            # Fetch and parse product page
-            html = await self.fetch_html(product_page_url)
-            soup = BeautifulSoup(html, "html.parser")
-
-            # Extract product name from the page itself
-            product_name = self._extract_product_name(soup)
-            if not product_name:
-                logger.warning(f"Could not extract product name from {product_url}")
-                product_name = "Unknown Product"
-
-            # Extract carousel images
-            images = self._extract_carousel_images(soup)
-
-            # Extract datasheet URL
-            datasheet_url = self._extract_datasheet_url(soup)
-
-            # Extract technical specifications from HTML tables
-            specifications_html = self._extract_specifications_tables(soup)
-
-            # Cache the extracted product details
-            if self.download_cache:
-                self.download_cache.cache_product(
-                    product_page_url,
-                    product_name,
-                    images,
-                    datasheet_url,
-                    specifications_html,
-                )
-
-            logger.info(f"Extracted {len(images)} images for {product_name}")
-            if datasheet_url:
-                logger.info(f"Found datasheet: {datasheet_url}")
-            logger.info(f"Found {len(specifications_html)} specification sections")
-
-        # Create camera record with extracted data
-        camera_record = CameraRecord(
-            camera_id=product_name.lower().replace(" ", "-"),
-            model_name=product_name,
-            display_name=product_name,
+        return CameraRecord(
+            camera_id=details.name.lower().replace(" ", "-"),
+            model_name=details.name,
+            display_name=details.name,
             description=None,
             specifications={},
-            image_url=images[0] if images else None,
-            images=images,
-            datasheet_url=datasheet_url,
-            specifications_html=specifications_html,
+            image_url=details.images[0] if details.images else None,
+            images=details.images,
+            datasheet_url=details.datasheet_url,
+            specifications_html=details.specifications_html,
             source="Axis Communications",
             category="Network Camera",
             product_category=category_name,
             product_series=series_name,
         )
-
-        return camera_record
-
-    @staticmethod
-    def _extract_product_name(soup: BeautifulSoup) -> str | None:
-        r"""
-        Extract the main product name/title from the product page.
-
-        :param soup: BeautifulSoup parsed HTML
-        :return: Product name or None if not found
-        """
-        # Look for h1 with title class
-        h1_tag = soup.find("h1", class_="title-attention")
-        if h1_tag:
-            return h1_tag.get_text(strip=True)
-
-        # Fallback to first h1
-        h1_tag = soup.find("h1")
-        if h1_tag:
-            return h1_tag.get_text(strip=True)
-
-        return None
-
-    @staticmethod
-    def _extract_carousel_images(soup: BeautifulSoup) -> list[str]:
-        r"""
-        Extract all image URLs from the product carousel.
-
-        :param soup: BeautifulSoup parsed HTML
-        :return: List of image URLs
-        """
-        images = []
-        carousel = soup.find("div", class_="product-img-carousel--main")
-
-        if not carousel:
-            return images
-
-        # Find all img tags within the carousel
-        img_tags = carousel.find_all("img")
-        for img in img_tags:
-            src = img.get("src")
-            if src:
-                images.append(src)
-
-        return images
-
-    @staticmethod
-    def _extract_datasheet_url(soup: BeautifulSoup) -> str | None:
-        r"""
-        Extract the datasheet PDF URL from the product page.
-
-        :param soup: BeautifulSoup parsed HTML
-        :return: Datasheet URL or None if not found
-        """
-        # Look for a link with text containing "Datasheet" and "pdf"
-        for link in soup.find_all("a"):
-            link_text = link.get_text(strip=True).lower()
-            if "datasheet" in link_text and "pdf" in link_text:
-                href = link.get("href")
-                if href:
-                    return href
-
-        return None
-
-    @staticmethod
-    def _extract_specifications_tables(
-        soup: BeautifulSoup,
-    ) -> dict[str, dict[str, str]]:
-        r"""
-        Extract technical specifications from HTML tables.
-
-        :param soup: BeautifulSoup parsed HTML
-        :return: Dictionary with section names as keys and spec tables as values
-        """
-        specifications = {}
-
-        # Find all tables with class "ac-table"
-        tables = soup.find_all("table", class_="ac-table")
-
-        for table in tables:
-            # Get the table caption (section name)
-            caption = table.find("caption", class_="ac-table__caption")
-            section_name = caption.get_text(strip=True) if caption else "Unknown"
-
-            # Extract rows from tbody
-            tbody = table.find("tbody", class_="ac-table__body")
-            if not tbody:
-                continue
-
-            section_specs = {}
-            rows = tbody.find_all("tr", class_="ac-table__row")
-
-            for row in rows:
-                cells = row.find_all("td", class_="ac-table__cell")
-                if len(cells) >= 2:
-                    # First cell is the spec name, second is the value
-                    spec_name = cells[0].get_text(strip=True)
-                    spec_value = cells[1].get_text(strip=True)
-                    section_specs[spec_name] = spec_value
-
-            if section_specs:
-                specifications[section_name] = section_specs
-
-        return specifications
 
     async def download(self, url: str) -> bytes:
         """

@@ -5,18 +5,43 @@ import re
 import httpx
 from bs4 import BeautifulSoup
 from loguru import logger
-from playwright.async_api import async_playwright, Browser
+from playwright.async_api import Browser, async_playwright
 
 from src.config import (
+    HIKVISION_IP_SUBCATEGORIES,
+    HIKVISION_SELECTORS,
     hikvision,
     scraper,
-    HIKVISION_SELECTORS,
-    HIKVISION_IP_SUBCATEGORIES,
 )
-from src.models.camera import CategoryLink, CameraRecord
+from src.models.camera import CameraRecord, CategoryLink
 from src.scrapers.base import CameraScraperBase
-from src.scrapers.managers import DownloadManager, ProtocolRelativeURLNormalizer
+from src.scrapers.managers import (
+    DownloadManager,
+    ProductDetailExtractor,
+    ProtocolRelativeURLNormalizer,
+)
 from src.storage.download_cache import DownloadCache
+
+
+class _HikvisionProductDetailExtractor(ProductDetailExtractor):
+    """Hikvision-specific selectors for product detail extraction.
+
+    Delegates to the scraper's static parsing helpers so they remain
+    callable directly (tests rely on that surface).
+    """
+
+    def _extract_name(self, soup: BeautifulSoup) -> str | None:
+        name, _number = HikvisionCameraScraper._extract_product_name(soup)
+        return name
+
+    def _extract_images(self, soup: BeautifulSoup) -> list[str]:
+        return HikvisionCameraScraper._extract_carousel_images(soup)
+
+    def _extract_datasheet_url(self, soup: BeautifulSoup) -> str | None:
+        return HikvisionCameraScraper._extract_datasheet_url(soup)
+
+    def _extract_specifications(self, soup: BeautifulSoup) -> dict[str, dict[str, str]]:
+        return HikvisionCameraScraper._extract_specifications(soup)
 
 
 class HikvisionCameraScraper(CameraScraperBase):
@@ -44,6 +69,7 @@ class HikvisionCameraScraper(CameraScraperBase):
         self.download_manager = DownloadManager(
             url_normalizer=self.url_normalizer, download_cache=download_cache
         )
+        self.product_extractor = _HikvisionProductDetailExtractor(self, download_cache)
 
     async def _get_browser(self) -> Browser:
         """Lazily initialize Playwright browser."""
@@ -327,73 +353,25 @@ class HikvisionCameraScraper(CameraScraperBase):
         :return: CameraRecord with detailed product information
         """
         product_page_url = f"{hikvision.base_url}{product_url}"
+        details = await self.product_extractor.extract(product_page_url)
 
-        # Check cache first
-        if self.download_cache and self.download_cache.has_cached_product(
-            product_page_url
-        ):
-            logger.info(f"Using cached product details for {product_url}")
-            cached_data = self.download_cache.get_cached_product(product_page_url)
-            product_name = cached_data["model_name"]
-            images = cached_data["image_urls"]
-            datasheet_url = cached_data["datasheet_url"]
-            specifications_html = cached_data["specifications_html"]
-        else:
-            # Fetch and parse product page
-            html = await self.fetch_html(product_page_url)
-            soup = BeautifulSoup(html, "html.parser")
+        camera_id = details.name.lower().replace(" ", "-").replace("/", "-")
 
-            # Extract product details
-            product_name, product_number = self._extract_product_name(soup)
-            if not product_name:
-                logger.warning(f"Could not extract product name from {product_url}")
-                product_name = "Unknown Product"
-
-            # Extract carousel images
-            images = self._extract_carousel_images(soup)
-
-            # Extract datasheet URL
-            datasheet_url = self._extract_datasheet_url(soup)
-
-            # Extract technical specifications
-            specifications_html = self._extract_specifications(soup)
-
-            # Cache the extracted product details
-            if self.download_cache:
-                self.download_cache.cache_product(
-                    product_page_url,
-                    product_name,
-                    images,
-                    datasheet_url,
-                    specifications_html,
-                )
-
-            logger.info(f"Extracted {len(images)} images for {product_name}")
-            if datasheet_url:
-                logger.info(f"Found datasheet: {datasheet_url}")
-            logger.info(f"Found {len(specifications_html)} specification sections")
-
-        # Generate camera_id from product name
-        camera_id = product_name.lower().replace(" ", "-").replace("/", "-")
-
-        # Create camera record with extracted data
-        camera_record = CameraRecord(
+        return CameraRecord(
             camera_id=camera_id,
-            model_name=product_name,
-            display_name=product_name,
+            model_name=details.name,
+            display_name=details.name,
             description=None,
             specifications={},
-            image_url=images[0] if images else None,
-            images=images,
-            datasheet_url=datasheet_url,
-            specifications_html=specifications_html,
+            image_url=details.images[0] if details.images else None,
+            images=details.images,
+            datasheet_url=details.datasheet_url,
+            specifications_html=details.specifications_html,
             source="HikVision",
             category="Network Camera",
             product_category=category_name,
             product_series=category_name,
         )
-
-        return camera_record
 
     @staticmethod
     def _extract_product_name(soup: BeautifulSoup) -> tuple[str | None, str | None]:

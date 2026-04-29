@@ -103,10 +103,11 @@ def test_product_extraction_with_dataset_integration() -> None:
     scraper = AxisCameraScraper()
     dataset_manager = DatasetManager()
 
-    # Extract product details
-    images = scraper._extract_carousel_images(soup)
-    datasheet = scraper._extract_datasheet_url(soup)
-    specs = scraper._extract_specifications_tables(soup)
+    # Extract product details via the scraper's product extractor
+    extractor = scraper.product_extractor
+    images = extractor._extract_images(soup)
+    datasheet = extractor._extract_datasheet_url(soup)
+    specs = extractor._extract_specifications(soup)
 
     logger.info(f"Extracted {len(images)} images")
     logger.info(f"Found datasheet: {datasheet is not None}")
