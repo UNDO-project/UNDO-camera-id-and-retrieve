@@ -20,13 +20,19 @@ Stage 1 – Scrape
    :noindex:
 
 .. automodule:: src.scrapers.managers.download_manager
-   :members: ContentDownloader, DownloadManager
+   :members: ContentDownloader, DownloadManager, DownloadCacheStrategy
    :undoc-members:
    :show-inheritance:
    :noindex:
 
 .. automodule:: src.scrapers.managers.url_normalizer
    :members: URLNormalizer, RelativeURLNormalizer, ProtocolRelativeURLNormalizer
+   :undoc-members:
+   :show-inheritance:
+   :noindex:
+
+.. automodule:: src.scrapers.managers.product_detail_extractor
+   :members: ProductDetailExtractor, ProductDetails
    :undoc-members:
    :show-inheritance:
    :noindex:
@@ -42,6 +48,12 @@ Stage 2 – Build dataset
 
 .. automodule:: src.building.builder
    :members: DatasetBuilder
+   :undoc-members:
+   :show-inheritance:
+   :noindex:
+
+.. automodule:: src.building.merge_strategies
+   :members: MergeStrategy, UpdateMergeStrategy, SkipMergeStrategy, ErrorMergeStrategy, MergeStrategyFactory, MergeResult
    :undoc-members:
    :show-inheritance:
    :noindex:
@@ -78,6 +90,18 @@ Stage 3 – Validate dataset
 
 .. automodule:: src.validation.validator
    :members: DatasetValidator
+   :undoc-members:
+   :show-inheritance:
+   :noindex:
+
+.. automodule:: src.validation.file_validators
+   :members: FileValidator, ImageFileValidator, PdfFileValidator
+   :undoc-members:
+   :show-inheritance:
+   :noindex:
+
+.. automodule:: src.validation.report
+   :members: ValidationReport, ReportFormatter
    :undoc-members:
    :show-inheritance:
    :noindex:
