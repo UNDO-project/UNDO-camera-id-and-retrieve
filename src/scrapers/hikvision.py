@@ -1,23 +1,47 @@
 """Scraper for HikVision network cameras."""
 
-from typing import List, Tuple, Dict
 import re
 
 import httpx
 from bs4 import BeautifulSoup
 from loguru import logger
-from playwright.async_api import async_playwright, Browser
+from playwright.async_api import Browser, async_playwright
 
 from src.config import (
+    HIKVISION_IP_SUBCATEGORIES,
+    HIKVISION_SELECTORS,
     hikvision,
     scraper,
-    HIKVISION_SELECTORS,
-    HIKVISION_IP_SUBCATEGORIES,
 )
-from src.models.camera import CategoryLink, CameraRecord
+from src.models.camera import CameraRecord, CategoryLink
 from src.scrapers.base import CameraScraperBase
-from src.scrapers.managers import DownloadManager, ProtocolRelativeURLNormalizer
+from src.scrapers.managers import (
+    DownloadManager,
+    ProductDetailExtractor,
+    ProtocolRelativeURLNormalizer,
+)
 from src.storage.download_cache import DownloadCache
+
+
+class _HikvisionProductDetailExtractor(ProductDetailExtractor):
+    """Hikvision-specific selectors for product detail extraction.
+
+    Delegates to the scraper's static parsing helpers so they remain
+    callable directly (tests rely on that surface).
+    """
+
+    def _extract_name(self, soup: BeautifulSoup) -> str | None:
+        name, _number = HikvisionCameraScraper._extract_product_name(soup)
+        return name
+
+    def _extract_images(self, soup: BeautifulSoup) -> list[str]:
+        return HikvisionCameraScraper._extract_carousel_images(soup)
+
+    def _extract_datasheet_url(self, soup: BeautifulSoup) -> str | None:
+        return HikvisionCameraScraper._extract_datasheet_url(soup)
+
+    def _extract_specifications(self, soup: BeautifulSoup) -> dict[str, dict[str, str]]:
+        return HikvisionCameraScraper._extract_specifications(soup)
 
 
 class HikvisionCameraScraper(CameraScraperBase):
@@ -45,6 +69,7 @@ class HikvisionCameraScraper(CameraScraperBase):
         self.download_manager = DownloadManager(
             url_normalizer=self.url_normalizer, download_cache=download_cache
         )
+        self.product_extractor = _HikvisionProductDetailExtractor(self, download_cache)
 
     async def _get_browser(self) -> Browser:
         """Lazily initialize Playwright browser."""
@@ -75,224 +100,156 @@ class HikvisionCameraScraper(CameraScraperBase):
         if self._playwright:
             await self._playwright.stop()
 
-    async def fetch_product_urls_with_playwright(self, subcategory: str) -> List[str]:
+    @staticmethod
+    async def _read_product_count(page) -> int:
         """
-        Use Playwright to navigate, filter, and extract product URLs.
+        Read the displayed product count from the page.
 
-        :param subcategory: Subcategory filter value (e.g., "Network Cameras")
+        :param page: Playwright page
+        :return: Product count, or 0 if not parseable
+        """
+        count_locator = page.locator(HIKVISION_SELECTORS["product_count"])
+        count_texts = await count_locator.all_text_contents()
+        counts: list[int] = []
+        for t in count_texts:
+            digits = re.sub(r"[^\d]", "", (t or "").strip())
+            if digits:
+                counts.append(int(digits))
+        return max(counts) if counts else 0
+
+    @staticmethod
+    async def _collect_links_on_page(page, product_urls: list[str]) -> None:
+        """
+        Append unseen product hrefs from the current page to ``product_urls``.
+
+        :param page: Playwright page
+        :param product_urls: Accumulator list (mutated in place)
+        """
+        links = page.locator(HIKVISION_SELECTORS["product_link"])
+        count = await links.count()
+        for i in range(count):
+            href = await links.nth(i).get_attribute("href")
+            if href and href not in product_urls:
+                product_urls.append(href)
+
+    @staticmethod
+    async def _advance_to_next_page(page) -> bool:
+        """
+        Click the pagination "Next" button if visible.
+
+        :param page: Playwright page
+        :return: True if navigation occurred, False if no next page
+        """
+        next_btn = page.locator(HIKVISION_SELECTORS["next_page_btn"])
+        if not await next_btn.is_visible():
+            return False
+        await next_btn.click()
+        await page.wait_for_load_state("networkidle")
+        await page.wait_for_selector(HIKVISION_SELECTORS["product_grid"])
+        return True
+
+    async def _extract_product_urls_with_playwright(
+        self,
+        url: str,
+        label: str,
+        apply_filter=None,
+    ) -> list[str]:
+        """
+        Generic product URL extraction with optional pre-filter step.
+
+        Navigates to ``url``, optionally applies a filter via
+        ``apply_filter``, then collects product links across paginated
+        results.
+
+        :param url: Listing page URL
+        :param label: Human-readable label used in log messages
+        :param apply_filter: Optional async callable ``(page) -> None``
+            invoked before pagination starts. Used for IP-products
+            subcategory filtering.
         :return: List of product detail page URLs
         """
         browser = await self._get_browser()
         page = await browser.new_page()
-        product_urls = []
+        product_urls: list[str] = []
 
         try:
-            # 1. Navigate to IP Products page
-            await page.goto(hikvision.ip_products_url, wait_until="networkidle")
+            logger.info(f"Navigating to {label} page")
+            await page.goto(url, wait_until="networkidle")
 
-            # 2. Wait for search list to load
+            if apply_filter is not None:
+                await apply_filter(page)
+
+            await page.wait_for_selector(HIKVISION_SELECTORS["product_grid"])
+            await page.wait_for_timeout(2000)
+
+            total_count = await self._read_product_count(page)
+            logger.info(f"Found {total_count} {label} products")
+
+            while True:
+                await self._collect_links_on_page(page, product_urls)
+                logger.info(
+                    f"Extracted {len(product_urls)}/"
+                    f"{total_count if total_count > 0 else '?'} {label} product URLs"
+                )
+
+                if 0 < total_count <= len(product_urls):
+                    break
+
+                if not await self._advance_to_next_page(page):
+                    logger.info(f"No more {label} pages available")
+                    break
+
+        finally:
+            await page.close()
+
+        logger.info(f"Total {label} products found: {len(product_urls)}")
+        return product_urls
+
+    async def fetch_product_urls_with_playwright(self, subcategory: str) -> list[str]:
+        """
+        Use Playwright to navigate, filter by subcategory, and extract IP product URLs.
+
+        :param subcategory: Subcategory filter value (e.g., "Network Cameras")
+        :return: List of product detail page URLs
+        """
+
+        async def apply_subcategory_filter(page) -> None:
             await page.wait_for_selector(HIKVISION_SELECTORS["search_list"])
-
-            # 3. Click subcategory dropdown to expand
-            subcategory_dropdown = page.locator(
-                HIKVISION_SELECTORS["subcategory_dropdown"]
-            )
-            await subcategory_dropdown.click()
-
-            # 4. Select the subcategory radio
+            await page.locator(HIKVISION_SELECTORS["subcategory_dropdown"]).click()
             radio_selector = HIKVISION_SELECTORS["subcategory_radio"].format(
                 subcategory=subcategory
             )
             await page.locator(radio_selector).check()
 
-            # 5. Wait for products to load
-            await page.wait_for_selector(HIKVISION_SELECTORS["product_grid"])
-            await page.wait_for_timeout(2000)  # Extra wait for dynamic content
+        return await self._extract_product_urls_with_playwright(
+            url=hikvision.ip_products_url,
+            label=f"IP/{subcategory}",
+            apply_filter=apply_subcategory_filter,
+        )
 
-            # 6. Get initial product count
-            count_locator = page.locator(HIKVISION_SELECTORS["product_count"])
-            count_texts = await count_locator.all_text_contents()
-            counts = []
-            for t in count_texts:
-                digits = re.sub(r"[^\d]", "", (t or "").strip())
-                if digits:
-                    counts.append(int(digits))
-
-            total_count = max(counts) if counts else 0
-            logger.info(f"Found {total_count} products for {subcategory}")
-
-            # 7. Extract products with pagination
-            while True:
-                # Extract product links from current page
-                links = page.locator(HIKVISION_SELECTORS["product_link"])
-                count = await links.count()
-
-                for i in range(count):
-                    href = await links.nth(i).get_attribute("href")
-                    if href and href not in product_urls:
-                        product_urls.append(href)
-
-                logger.info(f"Extracted {len(product_urls)}/{total_count} product URLs")
-
-                # Check if we have all products
-                if 0 < total_count <= len(product_urls):
-                    break
-
-                # Click "Next" button to go to next page
-                next_btn = page.locator(HIKVISION_SELECTORS["next_page_btn"])
-                if await next_btn.is_visible():
-                    await next_btn.click()
-                    # Wait for navigation and network to settle
-                    await page.wait_for_load_state("networkidle")
-                    await page.wait_for_selector(HIKVISION_SELECTORS["product_grid"])
-                else:
-                    logger.info("No more pages available")
-                    break  # No more pages to load
-
-        finally:
-            await page.close()
-
-        return product_urls
-
-    async def fetch_its_product_urls(self) -> List[str]:
+    async def fetch_its_product_urls(self) -> list[str]:
         """
         Fetch all ITS product URLs without filtering.
 
-        Simpler than IP products since no subcategory filtering needed.
-
         :return: List of product detail page URLs
         """
-        browser = await self._get_browser()
-        page = await browser.new_page()
-        product_urls = []
+        return await self._extract_product_urls_with_playwright(
+            url=hikvision.its_products_url,
+            label="ITS",
+        )
 
-        try:
-            # 1. Navigate to ITS Products page
-            logger.info("Navigating to ITS Products page")
-            await page.goto(hikvision.its_products_url, wait_until="networkidle")
-
-            # 2. Wait for product grid to load
-            await page.wait_for_selector(HIKVISION_SELECTORS["product_grid"])
-            await page.wait_for_timeout(2000)  # Extra wait for dynamic content
-
-            # 3. Get product count if available
-            count_locator = page.locator(HIKVISION_SELECTORS["product_count"])
-            count_texts = await count_locator.all_text_contents()
-            counts = []
-            for t in count_texts:
-                digits = re.sub(r"[^\d]", "", (t or "").strip())
-                if digits:
-                    counts.append(int(digits))
-
-            total_count = max(counts) if counts else 0
-            logger.info(f"Found {total_count} ITS products")
-
-            # 4. Extract products with pagination
-            while True:
-                # Extract product links from current page
-                links = page.locator(HIKVISION_SELECTORS["product_link"])
-                count = await links.count()
-
-                for i in range(count):
-                    href = await links.nth(i).get_attribute("href")
-                    if href and href not in product_urls:
-                        product_urls.append(href)
-
-                logger.info(
-                    f"Extracted {len(product_urls)}/{total_count if total_count > 0 else '?'} ITS product URLs"
-                )
-
-                # Check if we have all products
-                if 0 < total_count <= len(product_urls):
-                    break
-
-                # Click "Next" button to go to next page
-                next_btn = page.locator(HIKVISION_SELECTORS["next_page_btn"])
-                if await next_btn.is_visible():
-                    await next_btn.click()
-                    # Wait for navigation and network to settle
-                    await page.wait_for_load_state("networkidle")
-                    await page.wait_for_selector(HIKVISION_SELECTORS["product_grid"])
-                else:
-                    logger.info("No more ITS product pages available")
-                    break  # No more pages to load
-
-        finally:
-            await page.close()
-
-        logger.info(f"Total ITS products found: {len(product_urls)}")
-        return product_urls
-
-    async def fetch_thermal_product_urls(self) -> List[str]:
+    async def fetch_thermal_product_urls(self) -> list[str]:
         """
         Fetch all Thermal product URLs without filtering.
 
-        Simpler than IP products since no subcategory filtering needed.
-
         :return: List of product detail page URLs
         """
-        browser = await self._get_browser()
-        page = await browser.new_page()
-        product_urls = []
+        return await self._extract_product_urls_with_playwright(
+            url=hikvision.thermal_products_url,
+            label="Thermal",
+        )
 
-        try:
-            # 1. Navigate to Thermal Products page
-            logger.info("Navigating to Thermal Products page")
-            await page.goto(hikvision.thermal_products_url, wait_until="networkidle")
-
-            # 2. Wait for product grid to load
-            await page.wait_for_selector(HIKVISION_SELECTORS["product_grid"])
-            await page.wait_for_timeout(2000)  # Extra wait for dynamic content
-
-            # 3. Get product count if available
-            count_locator = page.locator(HIKVISION_SELECTORS["product_count"])
-            count_texts = await count_locator.all_text_contents()
-            counts = []
-            for t in count_texts:
-                digits = re.sub(r"[^\d]", "", (t or "").strip())
-                if digits:
-                    counts.append(int(digits))
-
-            total_count = max(counts) if counts else 0
-            logger.info(f"Found {total_count} Thermal products")
-
-            # 4. Extract products with pagination
-            while True:
-                # Extract product links from current page
-                links = page.locator(HIKVISION_SELECTORS["product_link"])
-                count = await links.count()
-
-                for i in range(count):
-                    href = await links.nth(i).get_attribute("href")
-                    if href and href not in product_urls:
-                        product_urls.append(href)
-
-                logger.info(
-                    f"Extracted {len(product_urls)}/{total_count if total_count > 0 else '?'} Thermal product URLs"
-                )
-
-                # Check if we have all products
-                if 0 < total_count <= len(product_urls):
-                    break
-
-                # Click "Next" button to go to next page
-                next_btn = page.locator(HIKVISION_SELECTORS["next_page_btn"])
-                if await next_btn.is_visible():
-                    await next_btn.click()
-                    # Wait for navigation and network to settle
-                    await page.wait_for_load_state("networkidle")
-                    await page.wait_for_selector(HIKVISION_SELECTORS["product_grid"])
-                else:
-                    logger.info("No more Thermal product pages available")
-                    break  # No more pages to load
-
-        finally:
-            await page.close()
-
-        logger.info(f"Total Thermal products found: {len(product_urls)}")
-        return product_urls
-
-    async def fetch_categories(self) -> List[CategoryLink]:
+    async def fetch_categories(self) -> list[CategoryLink]:
         r"""
         Return predefined HikVision camera categories (IP + ITS + Thermal products).
 
@@ -333,7 +290,7 @@ class HikvisionCameraScraper(CameraScraperBase):
         logger.info(f"Found {len(categories)} HikVision categories")
         return categories
 
-    async def fetch_cameras(self, category: CategoryLink) -> List[CategoryLink]:
+    async def fetch_cameras(self, category: CategoryLink) -> list[CategoryLink]:
         r"""
         Fetch all product URLs for a category using Playwright.
 
@@ -375,7 +332,7 @@ class HikvisionCameraScraper(CameraScraperBase):
         return product_links
 
     @staticmethod
-    async def fetch_products_in_series(series: CategoryLink) -> List[str]:
+    async def fetch_products_in_series(series: CategoryLink) -> list[str]:
         r"""
         Return the product URL directly (series IS the product).
 
@@ -396,76 +353,28 @@ class HikvisionCameraScraper(CameraScraperBase):
         :return: CameraRecord with detailed product information
         """
         product_page_url = f"{hikvision.base_url}{product_url}"
+        details = await self.product_extractor.extract(product_page_url)
 
-        # Check cache first
-        if self.download_cache and self.download_cache.has_cached_product(
-            product_page_url
-        ):
-            logger.info(f"Using cached product details for {product_url}")
-            cached_data = self.download_cache.get_cached_product(product_page_url)
-            product_name = cached_data["model_name"]
-            images = cached_data["image_urls"]
-            datasheet_url = cached_data["datasheet_url"]
-            specifications_html = cached_data["specifications_html"]
-        else:
-            # Fetch and parse product page
-            html = await self.fetch_html(product_page_url)
-            soup = BeautifulSoup(html, "html.parser")
+        camera_id = details.name.lower().replace(" ", "-").replace("/", "-")
 
-            # Extract product details
-            product_name, product_number = self._extract_product_name(soup)
-            if not product_name:
-                logger.warning(f"Could not extract product name from {product_url}")
-                product_name = "Unknown Product"
-
-            # Extract carousel images
-            images = self._extract_carousel_images(soup)
-
-            # Extract datasheet URL
-            datasheet_url = self._extract_datasheet_url(soup)
-
-            # Extract technical specifications
-            specifications_html = self._extract_specifications(soup)
-
-            # Cache the extracted product details
-            if self.download_cache:
-                self.download_cache.cache_product(
-                    product_page_url,
-                    product_name,
-                    images,
-                    datasheet_url,
-                    specifications_html,
-                )
-
-            logger.info(f"Extracted {len(images)} images for {product_name}")
-            if datasheet_url:
-                logger.info(f"Found datasheet: {datasheet_url}")
-            logger.info(f"Found {len(specifications_html)} specification sections")
-
-        # Generate camera_id from product name
-        camera_id = product_name.lower().replace(" ", "-").replace("/", "-")
-
-        # Create camera record with extracted data
-        camera_record = CameraRecord(
+        return CameraRecord(
             camera_id=camera_id,
-            model_name=product_name,
-            display_name=product_name,
+            model_name=details.name,
+            display_name=details.name,
             description=None,
             specifications={},
-            image_url=images[0] if images else None,
-            images=images,
-            datasheet_url=datasheet_url,
-            specifications_html=specifications_html,
+            image_url=details.images[0] if details.images else None,
+            images=details.images,
+            datasheet_url=details.datasheet_url,
+            specifications_html=details.specifications_html,
             source="HikVision",
             category="Network Camera",
             product_category=category_name,
             product_series=category_name,
         )
 
-        return camera_record
-
     @staticmethod
-    def _extract_product_name(soup: BeautifulSoup) -> Tuple[str | None, str | None]:
+    def _extract_product_name(soup: BeautifulSoup) -> tuple[str | None, str | None]:
         r"""
         Extract product name and number from meta tags or data attributes.
 
@@ -489,7 +398,7 @@ class HikvisionCameraScraper(CameraScraperBase):
         return product_name, product_number
 
     @staticmethod
-    def _extract_carousel_images(soup: BeautifulSoup) -> List[str]:
+    def _extract_carousel_images(soup: BeautifulSoup) -> list[str]:
         r"""
         Extract all image URLs from the product carousel.
 
@@ -551,7 +460,7 @@ class HikvisionCameraScraper(CameraScraperBase):
     @staticmethod
     def _extract_specifications(
         soup: BeautifulSoup,
-    ) -> Dict[str, Dict[str, str]]:
+    ) -> dict[str, dict[str, str]]:
         r"""
         Extract technical specifications from accordion-style container.
 
@@ -673,7 +582,7 @@ class HikvisionCameraScraper(CameraScraperBase):
                 return await self._download_image_playwright(url)
             raise
 
-    async def download_and_organize_images(self, record: CameraRecord) -> List[str]:
+    async def download_and_organize_images(self, record: CameraRecord) -> list[str]:
         """
         Download and organize images using the download manager.
 

@@ -9,6 +9,12 @@ from loguru import logger
 
 from src.config import paths
 from src.storage.manifest import ManifestRecorder
+from src.validation.file_validators import (
+    FileValidator,
+    ImageFileValidator,
+    PdfFileValidator,
+)
+from src.validation.report import ReportFormatter, ValidationReport
 
 
 class DatasetValidator:
@@ -240,10 +246,16 @@ class DatasetValidator:
         r"""
         Layer 2: File Integrity (Media).
 
+        Orchestrates file validation using specialized validators:
+        - ImageFileValidator for image files
+        - PdfFileValidator for PDF files
+
         Checks:
         - Files exist on filesystem
         - Files are readable
         - Basic file format validation (magic bytes)
+
+        :param project_root: Root directory for file path resolution
         """
         if self.df is None:
             return
@@ -253,83 +265,20 @@ class DatasetValidator:
 
         logger.info("Layer 2: Validating file integrity...")
 
-        missing_images = 0
-        invalid_format_images = 0
-        missing_pdfs = 0
-        # orphaned_images = 0
+        validators: list[FileValidator] = [
+            ImageFileValidator(project_root),
+            PdfFileValidator(project_root),
+        ]
 
-        # Check referenced files
         for idx, row in self.df.iterrows():
-            # Check images
-            if not pd.isna(row.get("image_files")) and row.get("image_files") != "[]":
-                try:
-                    image_files = json.loads(row.get("image_files", "[]"))
-                    for img_path in image_files:
-                        full_path = project_root / img_path
-                        if not full_path.exists():
-                            missing_images += 1
-                            self.errors.append(
-                                {"type": "missing_image", "path": img_path}
-                            )
-                        elif full_path.suffix.lower() == ".webp":
-                            # Basic magic byte check for webp
-                            try:
-                                with open(full_path, "rb") as f:
-                                    header = f.read(4)
-                                    if header != b"RIFF":
-                                        invalid_format_images += 1
-                                        self.errors.append(
-                                            {
-                                                "type": "invalid_image_format",
-                                                "path": img_path,
-                                            }
-                                        )
-                            except Exception as e:
-                                self.errors.append(
-                                    {
-                                        "type": "cannot_read_image",
-                                        "path": img_path,
-                                        "error": str(e),
-                                    }
-                                )
-                except json.JSONDecodeError:
-                    self.errors.append({"type": "invalid_json_image_files", "row": idx})
+            row_dict = row.to_dict()
+            for validator in validators:
+                validator.validate(row_dict, idx)
 
-            # Check PDFs
-            if not pd.isna(row.get("datasheet_file")) and row.get("datasheet_file"):
-                pdf_file = row.get("datasheet_file")
-                full_path = project_root / pdf_file
-                if not full_path.exists():
-                    missing_pdfs += 1
-                    self.errors.append({"type": "missing_pdf", "path": pdf_file})
-                else:
-                    # Basic magic byte check for PDF
-                    try:
-                        with open(full_path, "rb") as f:
-                            header = f.read(4)
-                            if header != b"%PDF":
-                                self.errors.append(
-                                    {"type": "invalid_pdf_format", "path": pdf_file}
-                                )
-                    except Exception as e:
-                        self.errors.append(
-                            {
-                                "type": "cannot_read_pdf",
-                                "path": pdf_file,
-                                "error": str(e),
-                            }
-                        )
-
-        self.stats["missing_images"] = missing_images
-        self.stats["invalid_format_images"] = invalid_format_images
-        self.stats["missing_pdfs"] = missing_pdfs
-
-        if missing_images > 0:
-            logger.warning(f"Found {missing_images} missing images")
-        if invalid_format_images > 0:
-            logger.warning(f"Found {invalid_format_images} invalid image formats")
-        if missing_pdfs > 0:
-            logger.warning(f"Found {missing_pdfs} missing PDFs")
+        # Collect errors and stats from each validator
+        for validator in validators:
+            self.errors.extend(validator.errors)
+            self.stats.update(validator.get_stats())
 
         logger.success("File integrity validation complete")
 
@@ -469,116 +418,90 @@ class DatasetValidator:
 
         logger.success("Manifest comparison complete")
 
+    def build_report(self) -> ValidationReport:
+        r"""
+        Build a structured :class:`ValidationReport` from current state.
+
+        :return: Snapshot of validation results suitable for formatting
+        """
+        return ValidationReport(
+            parquet_path=self.parquet_path,
+            manifest_path=self.manifest_path,
+            version_number=self.version_number,
+            version_info=self.version_info,
+            errors=list(self.errors),
+            warnings=list(self.warnings),
+            stats=dict(self.stats),
+        )
+
     def print_report(self, verbose: bool = False) -> None:
         r"""
         Print comprehensive validation report.
 
+        Generates a :class:`ValidationReport`, formats it via
+        :class:`ReportFormatter`, and prints the result.
+
         :param verbose: Show detailed errors and warnings
         """
-        print("\n" + "=" * 80)
-        print("DATASET VALIDATION REPORT")
-        print("=" * 80)
+        report = self.build_report()
+        formatter = ReportFormatter(report, verbose=verbose)
+        print(formatter.format())
 
-        print(f"\nDataset: {self.parquet_path}")
-        print(f"Manifest: {self.manifest_path}")
-
-        # Display version information if available
-        if self.version_number is not None and self.version_info is not None:
-            print("\n--- VERSION INFORMATION ---")
-            print(f"Version: {self.version_number}")
-            print(f"Timestamp: {self.version_info.get('timestamp', 'N/A')}")
-            print(f"Record Count: {self.version_info.get('record_count', 'N/A')}")
-            print(
-                f"Manifest Hash: {self.version_info.get('manifest_hash', 'N/A')[:32]}..."
-            )
-            print(f"Append Mode: {self.version_info.get('append_mode', 'N/A')}")
-            if self.version_info.get("append_mode"):
-                print(f"Records Added: {self.version_info.get('records_added', 'N/A')}")
-                print(
-                    f"Records Updated: {self.version_info.get('records_updated', 'N/A')}"
-                )
-                print(
-                    f"Parent Version: {self.version_info.get('parent_version', 'N/A')}"
-                )
-
-        print("\n--- VALIDATION SUMMARY ---")
-        print(f"Errors: {len(self.errors)}")
-        print(f"Warnings: {len(self.warnings)}")
-
-        print("\n--- COVERAGE METRICS ---")
-        print(f"Total Records: {self.stats.get('total_records', 0)}")
-        print(
-            f"Records with Images: {self.stats.get('records_with_images', 0)} ({self.stats.get('image_coverage', 'N/A')})"
-        )
-        print(
-            f"Records with PDFs: {self.stats.get('records_with_pdfs', 0)} ({self.stats.get('pdf_coverage', 'N/A')})"
-        )
-        print(
-            f"Records with Specs: {self.stats.get('records_with_specs', 0)} ({self.stats.get('specs_coverage', 'N/A')})"
-        )
-
-        print("\n--- FILE INTEGRITY ---")
-        print(f"Missing Images: {self.stats.get('missing_images', 0)}")
-        print(f"Invalid Image Format: {self.stats.get('invalid_format_images', 0)}")
-        print(f"Missing PDFs: {self.stats.get('missing_pdfs', 0)}")
-
-        print("\n--- DATA QUALITY ---")
-        print(f"Duplicate IDs: {self.stats.get('duplicate_ids', 0)}")
-        print(f"Records without Media: {self.stats.get('no_media_records', 0)}")
-
-        print("\n--- MANIFEST COMPARISON ---")
-        print(f"Expected Products: {self.stats.get('manifest_products', 'N/A')}")
-        print(f"Actual Products: {self.stats.get('total_records', 'N/A')}")
-
-        if len(self.errors) == 0 and len(self.warnings) == 0:
-            print("\n✅ Dataset validation passed!")
-        elif len(self.errors) == 0:
-            print(f"\n⚠️ Dataset has {len(self.warnings)} warning(s) but no errors")
-        else:
-            print(f"\n❌ Dataset has {len(self.errors)} error(s)")
-
-        if verbose and (self.errors or self.warnings):
-            if self.errors:
-                print("\n--- ERRORS (first 10) ---")
-                for error in self.errors[:10]:
-                    print(f"  • {error}")
-                if len(self.errors) > 10:
-                    print(f"  ... and {len(self.errors) - 10} more")
-
-            if self.warnings:
-                print("\n--- WARNINGS (first 10) ---")
-                for warning in self.warnings[:10]:
-                    print(f"  • {warning}")
-                if len(self.warnings) > 10:
-                    print(f"  ... and {len(self.warnings) - 10} more")
-
-        print("=" * 80 + "\n")
-
-    def validate_all(
-        self, verbose: bool = False, project_root: Path | None = None
-    ) -> bool:
+    def _setup_validation(self) -> bool:
         r"""
-        Run all validation layers.
+        Load dataset and manifest for validation.
 
-        :param verbose: Print detailed output
-        :param project_root: Root directory for file path resolution
-        :return: True if no errors found
+        :return: True if setup successful
         """
         if not self.load_dataset():
             return False
 
-        # Load or generate manifest
         if not self.load_manifest():
             logger.info("Generating manifest from dataset...")
             self.generate_manifest_from_parquet()
-            self.load_manifest()
+            if not self.load_manifest():
+                logger.error("Failed to generate manifest")
+                return False
 
+        return True
+
+    def _run_all_validation_layers(self, project_root: Path | None) -> None:
+        r"""
+        Execute all 5 validation layers.
+
+        :param project_root: Root directory for file path resolution
+        """
         self.validate_schema()
         self.validate_files(project_root)
         self.validate_data_quality()
         self.validate_statistics()
         self.compare_with_manifest()
 
+    def validate_all(
+        self, verbose: bool = False, project_root: Path | None = None
+    ) -> bool:
+        r"""
+        Run all validation layers and report results.
+
+        Orchestrates the validation process:
+        1. Load dataset and manifest
+        2. Execute all validation layers
+        3. Print comprehensive report
+        4. Return success/failure status
+
+        :param verbose: Print detailed output
+        :param project_root: Root directory for file path resolution
+        :return: True if no errors found
+        """
+        # Step 1: Setup validation (load dataset and manifest)
+        if not self._setup_validation():
+            return False
+
+        # Step 2: Execute all validation layers
+        self._run_all_validation_layers(project_root)
+
+        # Step 3: Print report
         self.print_report(verbose=verbose)
 
+        # Step 4: Return success/failure
         return len(self.errors) == 0

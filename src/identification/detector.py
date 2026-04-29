@@ -6,14 +6,14 @@ used to detect cameras in arbitrary images.
 
 import io
 from pathlib import Path
-from typing import List, Optional
+from typing import Any
 
 import numpy as np
 from PIL import Image
 from ultralytics import YOLO
 
-from src.models.weights import get_yolo_camera_weights_path
 from src.models.identification import BoundingBox, CameraDetection
+from src.models.weights import get_yolo_camera_weights_path
 
 
 class Detector:
@@ -28,7 +28,7 @@ class Detector:
 
     def __init__(
         self,
-        model_path: Optional[Path | str] = None,
+        model_path: Path | str | None = None,
         conf_threshold: float = 0.25,
     ) -> None:
         r"""Initialize detector with model weights path.
@@ -48,25 +48,30 @@ class Detector:
         self.conf_threshold = conf_threshold
         self._model = YOLO(str(self.model_path))
 
-    def detect_from_path(self, image_path: Path | str) -> List[CameraDetection]:
-        r"""Run detection on a single image path.
+    def _detect(
+        self,
+        source: Any,
+        image_path: Path | None,
+    ) -> list[CameraDetection]:
+        r"""Run YOLO inference on ``source`` and parse the results.
 
-        :param image_path: Path to the input image
-        :return: List of camera detections
-        :raises FileNotFoundError: If the image does not exist
+        Shared core for the public ``detect_from_*`` entry points. The
+        ``image_path`` is only used to populate
+        :attr:`CameraDetection.image_path` for traceability; YOLO itself
+        runs on whatever ``source`` is (a path string, numpy array,
+        PIL image, etc.).
+
+        :param source: Anything YOLO accepts as input
+        :param image_path: Original image path to record on detections,
+            or None if the image came from memory
+        :return: List of parsed CameraDetection objects
         """
-        image_path = Path(image_path)
-        if not image_path.exists():
-            raise FileNotFoundError(f"Image not found: {image_path}")
+        results = self._model(source, conf=self.conf_threshold)
 
-        # Run YOLO inference. Passing ``conf`` ensures basic filtering.
-        results = self._model(str(image_path), conf=self.conf_threshold)
-
-        detections: List[CameraDetection] = []
+        detections: list[CameraDetection] = []
         if not results:
             return detections
 
-        # For a single image call, we expect a single result object.
         result = results[0]
         boxes = getattr(result, "boxes", None)
         if boxes is None or boxes.xyxy is None or boxes.conf is None:
@@ -93,7 +98,7 @@ class Detector:
             x_min, y_min, x_max, y_max = [int(round(v)) for v in xyxy]
 
             label = "camera"
-            class_id_int: Optional[int] = None
+            class_id_int: int | None = None
             if cls_id is not None:
                 class_id_int = int(cls_id)
                 if names is not None and class_id_int in names:
@@ -117,7 +122,20 @@ class Detector:
 
         return detections
 
-    def detect_from_image(self, image: np.ndarray) -> List[CameraDetection]:
+    def detect_from_path(self, image_path: Path | str) -> list[CameraDetection]:
+        r"""Run detection on a single image path.
+
+        :param image_path: Path to the input image
+        :return: List of camera detections
+        :raises FileNotFoundError: If the image does not exist
+        """
+        image_path = Path(image_path)
+        if not image_path.exists():
+            raise FileNotFoundError(f"Image not found: {image_path}")
+
+        return self._detect(str(image_path), image_path=image_path)
+
+    def detect_from_image(self, image: np.ndarray) -> list[CameraDetection]:
         r"""Run detection on a numpy array image.
 
         This method allows in-memory processing without requiring a file path.
@@ -126,65 +144,9 @@ class Detector:
         :param image: Image as numpy array (H, W, C) in RGB or BGR format
         :return: List of camera detections
         """
-        # Run YOLO inference on numpy array
-        results = self._model(image, conf=self.conf_threshold)
+        return self._detect(image, image_path=None)
 
-        detections: List[CameraDetection] = []
-        if not results:
-            return detections
-
-        # For a single image call, we expect a single result object
-        result = results[0]
-        boxes = getattr(result, "boxes", None)
-        if boxes is None or boxes.xyxy is None or boxes.conf is None:
-            return detections
-
-        xyxy_list = boxes.xyxy.tolist()
-        conf_list = boxes.conf.tolist()
-        cls_list = (
-            boxes.cls.tolist()
-            if getattr(boxes, "cls", None) is not None
-            else [None] * len(conf_list)
-        )
-
-        names = getattr(self._model, "names", None)
-
-        for xyxy, conf, cls_id in zip(xyxy_list, conf_list, cls_list):
-            confidence = float(conf)
-            if confidence < self.conf_threshold:
-                continue
-
-            if len(xyxy) != 4:
-                continue
-
-            x_min, y_min, x_max, y_max = [int(round(v)) for v in xyxy]
-
-            label = "camera"
-            class_id_int: Optional[int] = None
-            if cls_id is not None:
-                class_id_int = int(cls_id)
-                if names is not None and class_id_int in names:
-                    label = str(names[class_id_int])
-
-            detections.append(
-                CameraDetection(
-                    image_path=None,  # No file path for in-memory images
-                    crop_path=None,
-                    bbox=BoundingBox(
-                        x_min=x_min,
-                        y_min=y_min,
-                        x_max=x_max,
-                        y_max=y_max,
-                    ),
-                    confidence=confidence,
-                    label=label,
-                    class_id=class_id_int,
-                )
-            )
-
-        return detections
-
-    def detect_from_bytes(self, image_bytes: bytes) -> List[CameraDetection]:
+    def detect_from_bytes(self, image_bytes: bytes) -> list[CameraDetection]:
         r"""Run detection on raw image bytes (e.g., JPEG).
 
         This method decodes image bytes (JPEG, PNG, etc.) and runs detection.
@@ -195,11 +157,8 @@ class Detector:
         :raises ValueError: If image bytes cannot be decoded
         """
         try:
-            # Decode bytes to PIL Image
             image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-            # Convert to numpy array
             image_array = np.array(image)
-            # Run detection on numpy array
             return self.detect_from_image(image_array)
         except Exception as e:
             raise ValueError(f"Failed to decode image bytes: {e}") from e

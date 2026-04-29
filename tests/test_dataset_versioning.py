@@ -369,6 +369,114 @@ def test_compute_file_hash(temp_dir):
     assert hash_result == hash_result2
 
 
+class TestBuildVersionInfo:
+    """Tests for the static _build_version_info helper."""
+
+    def test_basic_fields(self, temp_dir):
+        info = DatasetVersionManager._build_version_info(
+            version=2,
+            record_count=1500,
+            versioned_manifest=temp_dir / "verification_manifest_v2.json",
+            manifest_hash="sha256:abc",
+            append_mode=False,
+            merge_strategy=None,
+            records_added=0,
+            records_updated=0,
+            parent_version=None,
+        )
+
+        assert info["version"] == 2
+        assert info["record_count"] == 1500
+        assert info["file"] == "products_v2.parquet"
+        assert info["manifest_file"] == "verification_manifest_v2.json"
+        assert info["manifest_hash"] == "sha256:abc"
+        assert info["append_mode"] is False
+        assert info["merge_strategy"] is None
+        # Append-only fields should not appear when append_mode=False
+        assert "records_added" not in info
+        assert "records_updated" not in info
+        assert "parent_version" not in info
+
+    def test_append_mode_includes_extra_fields(self, temp_dir):
+        info = DatasetVersionManager._build_version_info(
+            version=3,
+            record_count=1600,
+            versioned_manifest=temp_dir / "verification_manifest_v3.json",
+            manifest_hash="sha256:def",
+            append_mode=True,
+            merge_strategy="update",
+            records_added=50,
+            records_updated=10,
+            parent_version=2,
+        )
+
+        assert info["append_mode"] is True
+        assert info["merge_strategy"] == "update"
+        assert info["records_added"] == 50
+        assert info["records_updated"] == 10
+        assert info["parent_version"] == 2
+
+
+class TestCreateVersionWithExplicitNumber:
+    """Tests for the explicit-version path of create_version."""
+
+    def test_uses_explicit_version_number(self, temp_dir, sample_manifest):
+        vm = DatasetVersionManager(temp_dir)
+
+        new_version = vm.create_version(
+            record_count=100,
+            manifest_path=sample_manifest,
+            append_mode=False,
+            merge_strategy=None,
+            version=42,
+        )
+
+        assert new_version == 42
+        metadata = vm.load_metadata()
+        assert metadata["current_version"] == 42
+        assert metadata["versions"][-1]["version"] == 42
+
+    def test_falls_back_to_sequential_when_no_explicit_version(
+        self, temp_dir, sample_manifest
+    ):
+        vm = DatasetVersionManager(temp_dir)
+        vm.create_version(
+            record_count=100,
+            manifest_path=sample_manifest,
+            append_mode=False,
+            merge_strategy=None,
+        )
+        # Without an explicit version, the next call should produce v2.
+        v2 = vm.create_version(
+            record_count=120,
+            manifest_path=sample_manifest,
+            append_mode=False,
+            merge_strategy=None,
+        )
+
+        assert v2 == 2
+
+
+class TestUpdateAndSaveMetadata:
+    """Tests for the _update_and_save_metadata helper."""
+
+    def test_appends_version_and_persists(self, temp_dir):
+        vm = DatasetVersionManager(temp_dir)
+        metadata = vm.load_metadata()
+
+        version_info = {"version": 7, "file": "products_v7.parquet"}
+        vm._update_and_save_metadata(metadata, version_info)
+
+        # In-memory state should reflect the update.
+        assert metadata["current_version"] == 7
+        assert metadata["versions"][-1] == version_info
+
+        # Reload from disk to confirm persistence.
+        reloaded = vm.load_metadata()
+        assert reloaded["current_version"] == 7
+        assert reloaded["versions"][-1]["version"] == 7
+
+
 def test_update_symlinks(temp_dir, sample_manifest):
     """Test symlink creation and updates."""
     vm = DatasetVersionManager(temp_dir)

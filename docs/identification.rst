@@ -47,7 +47,7 @@ Service & CLI
 -------------
 
 .. automodule:: src.identification.service
-   :members: IdentificationService
+   :members: IdentificationService, CropInfo
    :undoc-members:
    :show-inheritance:
    :noindex:

@@ -20,6 +20,11 @@ pytest tests/test_hikvision_extraction.py -v
 echo "Done..."
 echo "==============================================="
 
+echo "Running Hikvision Playwright helper tests"
+pytest tests/test_hikvision_playwright_helpers.py -v
+echo "Done..."
+echo "==============================================="
+
 echo "Running configuration tests"
 pytest tests/test_config.py -v
 echo "Done..."
@@ -27,6 +32,11 @@ echo "==============================================="
 
 echo "Running dataset creation tests"
 pytest tests/test_dataset_creation.py -v
+echo "Done..."
+echo "==============================================="
+
+echo "Running builder helper tests"
+pytest tests/test_builder_helpers.py -v
 echo "Done..."
 echo "==============================================="
 
@@ -40,13 +50,43 @@ pytest tests/test_dataset_versioning.py -v
 echo "Done..."
 echo "==============================================="
 
+echo "Running merge strategies tests"
+pytest tests/test_merge_strategies.py -v
+echo "Done..."
+echo "==============================================="
+
 echo "Running validation integration tests"
 pytest tests/test_validation_integration.py -v
 echo "Done..."
 echo "==============================================="
 
+echo "Running validator orchestration tests"
+pytest tests/test_validator_orchestration.py -v
+echo "Done..."
+echo "==============================================="
+
+echo "Running file validators tests"
+pytest tests/test_file_validators.py -v
+echo "Done..."
+echo "==============================================="
+
+echo "Running validation report tests"
+pytest tests/test_validation_report.py -v
+echo "Done..."
+echo "==============================================="
+
 echo "Running download cache tests"
 pytest tests/test_download_cache.py -v
+echo "Done..."
+echo "==============================================="
+
+echo "Running download cache strategy tests"
+pytest tests/test_download_cache_strategy.py -v
+echo "Done..."
+echo "==============================================="
+
+echo "Running product detail extractor tests"
+pytest tests/test_product_detail_extractor.py -v
 echo "Done..."
 echo "==============================================="
 
@@ -62,6 +102,11 @@ echo "==============================================="
 
 echo "Running identification async wrapper service tests"
 pytest tests/test_async_identification.py -v
+echo "Done..."
+echo "==============================================="
+
+echo "Running identification service unit tests"
+pytest tests/test_identification_service_unit.py -v
 echo "Done..."
 echo "==============================================="
 

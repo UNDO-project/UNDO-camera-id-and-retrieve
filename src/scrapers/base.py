@@ -121,3 +121,33 @@ class CameraScraperBase(ABC):
         :return: CameraRecord with product details
         """
         pass
+
+    @abstractmethod
+    async def fetch_products_in_series(self, series: CategoryLink) -> list[str]:
+        """
+        Fetch product URLs within a specific series.
+
+        :param series: Series to scrape
+        :return: List of product URLs
+        """
+        pass
+
+    @abstractmethod
+    async def download_and_organize_images(self, record: CameraRecord) -> list[str]:
+        """
+        Download and organize images for a product record.
+
+        :param record: CameraRecord with image URLs
+        :return: List of downloaded image file paths
+        """
+        pass
+
+    @abstractmethod
+    async def download_and_save_pdf(self, record: CameraRecord) -> str | None:
+        """
+        Download and save PDF datasheet for a product record.
+
+        :param record: CameraRecord with datasheet URL
+        :return: Path to saved PDF file, or None if no datasheet
+        """
+        pass

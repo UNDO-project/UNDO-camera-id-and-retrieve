@@ -73,38 +73,36 @@ class DatasetVersionManager:
         metadata = self.load_metadata()
         return metadata.get("current_version", 0)
 
-    def create_version(
-        self,
+    @staticmethod
+    def _build_version_info(
+        version: int,
         record_count: int,
-        manifest_path: Path,
+        versioned_manifest: Path,
+        manifest_hash: str,
         append_mode: bool,
         merge_strategy: str | None,
-        records_added: int = 0,
-        records_updated: int = 0,
-    ) -> int:
+        records_added: int,
+        records_updated: int,
+        parent_version: int | None,
+    ) -> dict:
         r"""
-        Create new dataset version and update metadata.
+        Build version metadata dictionary.
 
-        :param record_count: Total number of records in the new version
-        :param manifest_path: Path to the manifest used for this version
+        :param version: Version number
+        :param record_count: Total number of records
+        :param versioned_manifest: Path to versioned manifest file
+        :param manifest_hash: SHA-256 hash of manifest file
         :param append_mode: Whether this version was created in append mode
-        :param merge_strategy: Merge strategy used (update/skip/error or None)
+        :param merge_strategy: Merge strategy used
         :param records_added: Number of records added (if append mode)
         :param records_updated: Number of records updated (if append mode)
-        :return: New version number
+        :param parent_version: Parent version number (if append mode)
+        :return: Version info dictionary
         """
-        metadata = self.load_metadata()
-        new_version = metadata["current_version"] + 1
-
-        # Copy and version the manifest
-        versioned_manifest = self.copy_and_version_manifest(manifest_path, new_version)
-        manifest_hash = self._compute_file_hash(versioned_manifest)
-
-        # Create version info
         version_info = {
-            "version": new_version,
+            "version": version,
             "timestamp": datetime.now(timezone.utc).isoformat(),
-            "file": f"products_v{new_version}.parquet",
+            "file": f"products_v{version}.parquet",
             "record_count": record_count,
             "manifest_file": versioned_manifest.name,
             "manifest_hash": manifest_hash,
@@ -117,13 +115,84 @@ class DatasetVersionManager:
         if append_mode:
             version_info["records_added"] = records_added
             version_info["records_updated"] = records_updated
-            if len(metadata["versions"]) > 0:
-                version_info["parent_version"] = metadata["current_version"]
+            if parent_version is not None:
+                version_info["parent_version"] = parent_version
 
-        # Update metadata
-        metadata["current_version"] = new_version
+        return version_info
+
+    def _update_and_save_metadata(self, metadata: dict, version_info: dict) -> None:
+        r"""
+        Update metadata with new version and save to disk.
+
+        :param metadata: Current metadata dictionary
+        :param version_info: New version info to add
+        """
+        metadata["current_version"] = version_info["version"]
         metadata["versions"].append(version_info)
         self.save_metadata(metadata)
+
+    def create_version(
+        self,
+        record_count: int,
+        manifest_path: Path,
+        append_mode: bool,
+        merge_strategy: str | None,
+        records_added: int = 0,
+        records_updated: int = 0,
+        version: int | None = None,
+    ) -> int:
+        r"""
+        Create new dataset version and update metadata.
+
+        Orchestrates the version creation process:
+        1. Load existing metadata and compute new version number
+        2. Copy and version the manifest file
+        3. Compute manifest file hash
+        4. Build version info dictionary
+        5. Update and save metadata
+
+        :param record_count: Total number of records in the new version
+        :param manifest_path: Path to the manifest used for this version
+        :param append_mode: Whether this version was created in append mode
+        :param merge_strategy: Merge strategy used (update/skip/error or None)
+        :param records_added: Number of records added (if append mode)
+        :param records_updated: Number of records updated (if append mode)
+        :param version: Explicit version number to use. If None, the next
+            sequential version is computed from metadata.
+        :return: New version number
+        """
+        # Load metadata and resolve version number
+        metadata = self.load_metadata()
+        new_version = (
+            version if version is not None else metadata["current_version"] + 1
+        )
+
+        # Copy and version the manifest
+        versioned_manifest = self.copy_and_version_manifest(manifest_path, new_version)
+        manifest_hash = self._compute_file_hash(versioned_manifest)
+
+        # Determine parent version for append mode
+        parent_version = (
+            metadata["current_version"]
+            if append_mode and metadata["versions"]
+            else None
+        )
+
+        # Build version info
+        version_info = self._build_version_info(
+            version=new_version,
+            record_count=record_count,
+            versioned_manifest=versioned_manifest,
+            manifest_hash=manifest_hash,
+            append_mode=append_mode,
+            merge_strategy=merge_strategy,
+            records_added=records_added,
+            records_updated=records_updated,
+            parent_version=parent_version,
+        )
+
+        # Update and save metadata
+        self._update_and_save_metadata(metadata, version_info)
 
         logger.info(f"Created version {new_version} with {record_count} records")
         return new_version
