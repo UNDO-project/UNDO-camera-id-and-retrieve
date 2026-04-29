@@ -328,16 +328,20 @@ class DatasetBuilder:
         :return: Merged DataFrame
         :raises ValueError: If merge_strategy is invalid or duplicates found in error mode
         """
-        # Check if existing dataset exists
         existing_df = self._load_existing_dataset()
         if existing_df is None:
             logger.info("No existing dataset found, creating new one")
             self.merge_stats["records_added"] = len(new_df)
             return new_df
 
-        # Get and apply merge strategy
         strategy = MergeStrategyFactory.get_strategy(self.merge_strategy)
-        return strategy.merge(new_df, existing_df, self)
+        result = strategy.merge(new_df, existing_df)
+
+        self.merge_stats["records_added"] = result.records_added
+        self.merge_stats["records_updated"] = result.records_updated
+        self.merge_stats["records_skipped"] = result.records_skipped
+
+        return result.dataframe
 
     @staticmethod
     def _record_to_dict(record: CameraRecord) -> dict:

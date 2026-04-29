@@ -5,26 +5,11 @@ import pytest
 
 from src.building.merge_strategies import (
     ErrorMergeStrategy,
+    MergeResult,
     MergeStrategyFactory,
     SkipMergeStrategy,
     UpdateMergeStrategy,
 )
-
-
-class MockDatasetBuilder:
-    """Mock DatasetBuilder for testing merge strategies."""
-
-    def __init__(self):
-        self.merge_stats = {
-            "records_added": 0,
-            "records_updated": 0,
-            "records_skipped": 0,
-        }
-
-
-@pytest.fixture
-def builder():
-    return MockDatasetBuilder()
 
 
 @pytest.fixture
@@ -60,82 +45,72 @@ def new_df_with_duplicates():
 class TestUpdateMergeStrategy:
     """Tests for UpdateMergeStrategy."""
 
-    def test_merge_no_duplicates(self, builder, existing_df, new_df_no_duplicates):
+    def test_merge_no_duplicates(self, existing_df, new_df_no_duplicates):
         """Test merging when no duplicates exist."""
         strategy = UpdateMergeStrategy()
-        result = strategy.merge(new_df_no_duplicates, existing_df, builder)
+        result = strategy.merge(new_df_no_duplicates, existing_df)
 
-        # Should have all 5 records
-        assert len(result) == 5
-        # Stats: 2 added, 0 updated
-        assert builder.merge_stats["records_added"] == 2
-        assert builder.merge_stats["records_updated"] == 0
+        assert isinstance(result, MergeResult)
+        assert len(result.dataframe) == 5
+        assert result.records_added == 2
+        assert result.records_updated == 0
+        assert result.records_skipped == 0
 
-    def test_merge_with_duplicates(self, builder, existing_df, new_df_with_duplicates):
+    def test_merge_with_duplicates(self, existing_df, new_df_with_duplicates):
         """Test merging when duplicates exist - new records should replace old."""
         strategy = UpdateMergeStrategy()
-        result = strategy.merge(new_df_with_duplicates, existing_df, builder)
+        result = strategy.merge(new_df_with_duplicates, existing_df)
 
-        # Should have 4 records (3 existing - 2 duplicates + 3 new - 2 duplicates + 1 unique)
-        assert len(result) == 4
-        # Check that new values were kept
-        cam_002 = result[result["camera_id"] == "cam-002"].iloc[0]
+        assert len(result.dataframe) == 4
+        cam_002 = result.dataframe[result.dataframe["camera_id"] == "cam-002"].iloc[0]
         assert cam_002["model_name"] == "Updated Camera 2"
-        # Stats: 1 added, 2 updated
-        assert builder.merge_stats["records_added"] == 1
-        assert builder.merge_stats["records_updated"] == 2
+        assert result.records_added == 1
+        assert result.records_updated == 2
 
 
 class TestSkipMergeStrategy:
     """Tests for SkipMergeStrategy."""
 
-    def test_merge_no_duplicates(self, builder, existing_df, new_df_no_duplicates):
+    def test_merge_no_duplicates(self, existing_df, new_df_no_duplicates):
         """Test merging when no duplicates exist."""
         strategy = SkipMergeStrategy()
-        result = strategy.merge(new_df_no_duplicates, existing_df, builder)
+        result = strategy.merge(new_df_no_duplicates, existing_df)
 
-        # Should have all 5 records
-        assert len(result) == 5
-        # Stats: 2 added, 0 skipped
-        assert builder.merge_stats["records_added"] == 2
-        assert builder.merge_stats["records_skipped"] == 0
+        assert len(result.dataframe) == 5
+        assert result.records_added == 2
+        assert result.records_skipped == 0
 
-    def test_merge_with_duplicates(self, builder, existing_df, new_df_with_duplicates):
+    def test_merge_with_duplicates(self, existing_df, new_df_with_duplicates):
         """Test merging when duplicates exist - old records should be kept."""
         strategy = SkipMergeStrategy()
-        result = strategy.merge(new_df_with_duplicates, existing_df, builder)
+        result = strategy.merge(new_df_with_duplicates, existing_df)
 
-        # Should have 4 records
-        assert len(result) == 4
-        # Check that old values were kept
-        cam_002 = result[result["camera_id"] == "cam-002"].iloc[0]
-        assert cam_002["model_name"] == "Camera 2"  # Original value
-        # Stats: 1 added, 2 skipped
-        assert builder.merge_stats["records_added"] == 1
-        assert builder.merge_stats["records_skipped"] == 2
+        assert len(result.dataframe) == 4
+        cam_002 = result.dataframe[result.dataframe["camera_id"] == "cam-002"].iloc[0]
+        assert cam_002["model_name"] == "Camera 2"
+        assert result.records_added == 1
+        assert result.records_skipped == 2
 
 
 class TestErrorMergeStrategy:
     """Tests for ErrorMergeStrategy."""
 
-    def test_merge_no_duplicates(self, builder, existing_df, new_df_no_duplicates):
+    def test_merge_no_duplicates(self, existing_df, new_df_no_duplicates):
         """Test merging when no duplicates exist."""
         strategy = ErrorMergeStrategy()
-        result = strategy.merge(new_df_no_duplicates, existing_df, builder)
+        result = strategy.merge(new_df_no_duplicates, existing_df)
 
-        # Should have all 5 records
-        assert len(result) == 5
-        # Stats: 2 added
-        assert builder.merge_stats["records_added"] == 2
+        assert len(result.dataframe) == 5
+        assert result.records_added == 2
 
     def test_merge_with_duplicates_raises_error(
-        self, builder, existing_df, new_df_with_duplicates
+        self, existing_df, new_df_with_duplicates
     ):
         """Test that ValueError is raised when duplicates exist."""
         strategy = ErrorMergeStrategy()
 
         with pytest.raises(ValueError, match="Duplicate camera_ids found"):
-            strategy.merge(new_df_with_duplicates, existing_df, builder)
+            strategy.merge(new_df_with_duplicates, existing_df)
 
 
 class TestMergeStrategyFactory:
@@ -157,16 +132,15 @@ class TestMergeStrategyFactory:
         with pytest.raises(ValueError, match="Unknown merge strategy"):
             MergeStrategyFactory.get_strategy("invalid")
 
-    def test_register_custom_strategy(self, builder, existing_df, new_df_no_duplicates):
+    def test_register_custom_strategy(self, existing_df, new_df_no_duplicates):
         """Test registering a custom strategy."""
 
-        class CustomStrategy:
-            def merge(self, new_df, existing_df, builder):
-                return pd.concat([existing_df, new_df], ignore_index=True)
+        class CustomStrategy(UpdateMergeStrategy):
+            pass
 
-        MergeStrategyFactory.register_strategy("custom", CustomStrategy)
-        strategy = MergeStrategyFactory.get_strategy("custom")
+        MergeStrategyFactory.register_strategy("custom_test", CustomStrategy)
+        strategy = MergeStrategyFactory.get_strategy("custom_test")
         assert isinstance(strategy, CustomStrategy)
 
-        result = strategy.merge(new_df_no_duplicates, existing_df, builder)
-        assert len(result) == 5
+        result = strategy.merge(new_df_no_duplicates, existing_df)
+        assert len(result.dataframe) == 5

@@ -1,13 +1,26 @@
 """Merge strategies for dataset append operations."""
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING
+from dataclasses import dataclass
 
 import pandas as pd
 from loguru import logger
 
-if TYPE_CHECKING:
-    from src.building.builder import DatasetBuilder
+
+@dataclass
+class MergeResult:
+    """Result of a merge operation.
+
+    :ivar dataframe: Merged DataFrame
+    :ivar records_added: Count of net-new records included from new_df
+    :ivar records_updated: Count of existing records replaced by new ones
+    :ivar records_skipped: Count of new records skipped due to duplicates
+    """
+
+    dataframe: pd.DataFrame
+    records_added: int = 0
+    records_updated: int = 0
+    records_skipped: int = 0
 
 
 class MergeStrategy(ABC):
@@ -18,15 +31,13 @@ class MergeStrategy(ABC):
         self,
         new_df: pd.DataFrame,
         existing_df: pd.DataFrame,
-        builder: "DatasetBuilder",
-    ) -> pd.DataFrame:
+    ) -> MergeResult:
         """
         Merge new records with existing dataset.
 
         :param new_df: DataFrame with new records
         :param existing_df: DataFrame with existing records
-        :param builder: DatasetBuilder instance for updating stats
-        :return: Merged DataFrame
+        :return: MergeResult with the merged DataFrame and statistics
         :raises ValueError: If merge cannot be completed
         """
         pass
@@ -43,35 +54,34 @@ class UpdateMergeStrategy(MergeStrategy):
         self,
         new_df: pd.DataFrame,
         existing_df: pd.DataFrame,
-        builder: "DatasetBuilder",
-    ) -> pd.DataFrame:
+    ) -> MergeResult:
         """
         Merge by updating existing records with new ones.
 
         :param new_df: DataFrame with new records
         :param existing_df: DataFrame with existing records
-        :param builder: DatasetBuilder instance for updating stats
-        :return: Merged DataFrame with new records taking precedence
+        :return: MergeResult with new records taking precedence
         """
-        # Compute statistics
         existing_ids = set(existing_df["camera_id"])
         new_ids = set(new_df["camera_id"])
         duplicate_ids = existing_ids & new_ids
 
-        # Concatenate and keep last (new) record for duplicates
         merged = pd.concat([existing_df, new_df], ignore_index=True)
         merged = merged.drop_duplicates(subset=["camera_id"], keep="last")
 
-        # Update statistics
-        builder.merge_stats["records_added"] = len(new_ids - existing_ids)
-        builder.merge_stats["records_updated"] = len(duplicate_ids)
+        records_added = len(new_ids - existing_ids)
+        records_updated = len(duplicate_ids)
 
         logger.info(
-            f"Merge strategy 'update': {builder.merge_stats['records_updated']} "
-            f"records updated, {builder.merge_stats['records_added']} records added"
+            f"Merge strategy 'update': {records_updated} records updated, "
+            f"{records_added} records added"
         )
 
-        return merged.reset_index(drop=True)
+        return MergeResult(
+            dataframe=merged.reset_index(drop=True),
+            records_added=records_added,
+            records_updated=records_updated,
+        )
 
 
 class SkipMergeStrategy(MergeStrategy):
@@ -85,35 +95,34 @@ class SkipMergeStrategy(MergeStrategy):
         self,
         new_df: pd.DataFrame,
         existing_df: pd.DataFrame,
-        builder: "DatasetBuilder",
-    ) -> pd.DataFrame:
+    ) -> MergeResult:
         """
         Merge by skipping new records that already exist.
 
         :param new_df: DataFrame with new records
         :param existing_df: DataFrame with existing records
-        :param builder: DatasetBuilder instance for updating stats
-        :return: Merged DataFrame with existing records preserved
+        :return: MergeResult with existing records preserved
         """
-        # Compute statistics
         existing_ids = set(existing_df["camera_id"])
         new_ids = set(new_df["camera_id"])
         duplicate_ids = existing_ids & new_ids
 
-        # Concatenate and keep first (existing) record for duplicates
         merged = pd.concat([existing_df, new_df], ignore_index=True)
         merged = merged.drop_duplicates(subset=["camera_id"], keep="first")
 
-        # Update statistics
-        builder.merge_stats["records_added"] = len(new_ids - existing_ids)
-        builder.merge_stats["records_skipped"] = len(duplicate_ids)
+        records_added = len(new_ids - existing_ids)
+        records_skipped = len(duplicate_ids)
 
         logger.info(
-            f"Merge strategy 'skip': {builder.merge_stats['records_skipped']} "
-            f"records skipped, {builder.merge_stats['records_added']} records added"
+            f"Merge strategy 'skip': {records_skipped} records skipped, "
+            f"{records_added} records added"
         )
 
-        return merged.reset_index(drop=True)
+        return MergeResult(
+            dataframe=merged.reset_index(drop=True),
+            records_added=records_added,
+            records_skipped=records_skipped,
+        )
 
 
 class ErrorMergeStrategy(MergeStrategy):
@@ -127,23 +136,19 @@ class ErrorMergeStrategy(MergeStrategy):
         self,
         new_df: pd.DataFrame,
         existing_df: pd.DataFrame,
-        builder: "DatasetBuilder",
-    ) -> pd.DataFrame:
+    ) -> MergeResult:
         """
         Merge by raising error if any duplicates exist.
 
         :param new_df: DataFrame with new records
         :param existing_df: DataFrame with existing records
-        :param builder: DatasetBuilder instance for updating stats
-        :return: Merged DataFrame (if no duplicates)
+        :return: MergeResult (if no duplicates)
         :raises ValueError: If duplicate camera_ids are found
         """
-        # Compute statistics
         existing_ids = set(existing_df["camera_id"])
         new_ids = set(new_df["camera_id"])
         duplicate_ids = existing_ids & new_ids
 
-        # Raise error if duplicates found
         if duplicate_ids:
             logger.error(f"Found {len(duplicate_ids)} duplicate camera_ids")
             logger.error(f"Duplicate IDs: {sorted(list(duplicate_ids)[:10])}")
@@ -154,15 +159,15 @@ class ErrorMergeStrategy(MergeStrategy):
                 "Use --merge-strategy update or skip to handle duplicates."
             )
 
-        # No duplicates, just concatenate
         merged = pd.concat([existing_df, new_df], ignore_index=True)
-        builder.merge_stats["records_added"] = len(new_df)
+        records_added = len(new_df)
 
-        logger.info(
-            f"Merge strategy 'error': {builder.merge_stats['records_added']} records added"
+        logger.info(f"Merge strategy 'error': {records_added} records added")
+
+        return MergeResult(
+            dataframe=merged.reset_index(drop=True),
+            records_added=records_added,
         )
-
-        return merged.reset_index(drop=True)
 
 
 class MergeStrategyFactory:
