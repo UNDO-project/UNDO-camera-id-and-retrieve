@@ -110,3 +110,79 @@ def test_detector_returns_camera_detection(tmp_path: Path, monkeypatch: Any) -> 
     assert det.confidence == pytest.approx(0.9, rel=1e-6)
     assert det.label == "camera"
     assert det.class_id == 0
+
+
+def test_detect_from_image_uses_shared_core(tmp_path: Path, monkeypatch: Any) -> None:
+    r"""detect_from_image should produce detections without an image_path.
+
+    Verifies that the shared :meth:`Detector._detect` core handles the
+    in-memory entry point: returns the same parsed detections but with
+    ``image_path=None`` since there is no file backing the array.
+    """
+    import numpy as np
+
+    monkeypatch.setattr(detector_module, "YOLO", FakeYOLO)
+
+    from src.identification.detector import Detector
+
+    detector = Detector(model_path=tmp_path / "dummy.pt", conf_threshold=0.1)
+    image = np.zeros((100, 100, 3), dtype=np.uint8)
+
+    detections = detector.detect_from_image(image)
+
+    assert len(detections) == 1
+    det = detections[0]
+    assert det.image_path is None
+    assert det.bbox.x_min == 10
+    assert det.bbox.x_max == 111
+    assert det.confidence == pytest.approx(0.9, rel=1e-6)
+
+
+def test_detect_returns_empty_when_results_empty(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    r"""When YOLO returns no results, _detect yields an empty list."""
+
+    class EmptyYOLO(FakeYOLO):
+        def __call__(self, image_path, conf=None):
+            return []
+
+    monkeypatch.setattr(detector_module, "YOLO", EmptyYOLO)
+
+    from src.identification.detector import Detector
+
+    detector = Detector(model_path=tmp_path / "dummy.pt")
+    image_path = tmp_path / "img.jpg"
+    image_path.write_bytes(b"x")
+
+    assert detector.detect_from_path(image_path) == []
+
+
+def test_detect_filters_below_confidence_threshold(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    r"""Detections below the configured confidence threshold are dropped."""
+
+    class LowConfidenceBoxes(FakeBoxes):
+        def __init__(self):
+            self.xyxy = _ListWrapper([[0.0, 0.0, 50.0, 50.0]])
+            self.conf = _ListWrapper([0.05])  # below default 0.25
+            self.cls = _ListWrapper([0])
+
+    class LowConfidenceResult:
+        def __init__(self):
+            self.boxes = LowConfidenceBoxes()
+
+    class LowConfidenceYOLO(FakeYOLO):
+        def __call__(self, image_path, conf=None):
+            return [LowConfidenceResult()]
+
+    monkeypatch.setattr(detector_module, "YOLO", LowConfidenceYOLO)
+
+    from src.identification.detector import Detector
+
+    detector = Detector(model_path=tmp_path / "dummy.pt", conf_threshold=0.25)
+    image_path = tmp_path / "img.jpg"
+    image_path.write_bytes(b"x")
+
+    assert detector.detect_from_path(image_path) == []
