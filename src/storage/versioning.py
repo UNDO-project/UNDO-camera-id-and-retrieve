@@ -139,6 +139,7 @@ class DatasetVersionManager:
         merge_strategy: str | None,
         records_added: int = 0,
         records_updated: int = 0,
+        version: int | None = None,
     ) -> int:
         r"""
         Create new dataset version and update metadata.
@@ -156,11 +157,15 @@ class DatasetVersionManager:
         :param merge_strategy: Merge strategy used (update/skip/error or None)
         :param records_added: Number of records added (if append mode)
         :param records_updated: Number of records updated (if append mode)
+        :param version: Explicit version number to use. If None, the next
+            sequential version is computed from metadata.
         :return: New version number
         """
-        # Load metadata and compute new version
+        # Load metadata and resolve version number
         metadata = self.load_metadata()
-        new_version = metadata["current_version"] + 1
+        new_version = (
+            version if version is not None else metadata["current_version"] + 1
+        )
 
         # Copy and version the manifest
         versioned_manifest = self.copy_and_version_manifest(manifest_path, new_version)

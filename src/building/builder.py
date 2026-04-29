@@ -449,32 +449,22 @@ class DatasetBuilder:
             logger.error("Manual version mode requires --version number")
             return False
 
-        # Create version entry (side effect: adds to metadata, but we override version number below)
-        self.version_manager.create_version(
+        version = self.version_manager.create_version(
             record_count=len(df),
             manifest_path=self.manifest_path,
             append_mode=self.append,
             merge_strategy=self.merge_strategy if self.append else None,
             records_added=self.merge_stats["records_added"],
             records_updated=self.merge_stats["records_updated"],
+            version=self.version_number,
         )
+        versioned_path = self.version_manager.get_version_path(version)
 
-        # Override version number in metadata with user-specified version
-        metadata = self.version_manager.load_metadata()
-        metadata["current_version"] = self.version_number
-        metadata["versions"][-1]["version"] = self.version_number
-        self.version_manager.save_metadata(metadata)
-
-        # Use user-specified version number for file path and symlinks
-        versioned_path = self.version_manager.get_version_path(self.version_number)
         df.to_parquet(versioned_path, index=False, engine="pyarrow")
-        logger.success(
-            f"Dataset saved as version {self.version_number}: {versioned_path}"
-        )
+        logger.success(f"Dataset saved as version {version}: {versioned_path}")
 
-        # Update symlinks to user-specified version
-        self.version_manager.update_symlinks(self.version_number)
-        logger.info(f"Symlinks updated to version {self.version_number}")
+        self.version_manager.update_symlinks(version)
+        logger.info(f"Symlinks updated to version {version}")
 
         return True
 
