@@ -11,7 +11,7 @@ from pathlib import Path
 import sys
 import importlib.metadata
 
-project = "CCTV Identification and Research (cIDaR)"
+project = "Camera Identification and Research (cIDaR)"
 copyright = "2025, jethronap"
 author = "jethronap"
 
