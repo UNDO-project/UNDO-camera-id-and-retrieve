@@ -1,6 +1,6 @@
-# CCTV Scrapers Notebooks
+# Camera Identification and Research (cIDaR) Notebooks
 
-This directory contains Jupyter notebooks for interactive demonstrations and experiments with the CCTV scrapers pipeline.
+This directory contains Jupyter notebooks for interactive demonstrations and experiments with the cIDaR pipeline.
 
 ## ⚠️ Required Setup Before Running Notebooks
 

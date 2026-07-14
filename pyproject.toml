@@ -1,5 +1,5 @@
 [project]
-name = "cctv-identification-and-research"
+name = "camera-identification-and-research"
 version = "0.7.0"
 description = "A pipeline to scrape cctv data and identify given cameras in urban settings."
 readme = "README.md"

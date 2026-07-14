@@ -1,10 +1,10 @@
-.. CCTV Identification and Research (cIDaR) documentation master file, created by
+.. Camera Identification and Research (cIDaR) documentation master file, created by
    sphinx-quickstart on Wed Nov 19 15:03:43 2025.
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-CCTV Identification and Research (cIDaR)
-=========================================
+Camera Identification and Research (cIDaR)
+==========================================
 
 **Release:** |release|
 

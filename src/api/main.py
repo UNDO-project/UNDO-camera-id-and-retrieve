@@ -183,7 +183,7 @@ async def root() -> Dict[str, Any]:
     """
     return {
         "message": "cIDaR - Camera Identification and Research API",
-        "version": "0.3.0",
+        "version": APP_VERSION,
         "docs": "/docs",
         "health": "/api/v1/health",
     }
