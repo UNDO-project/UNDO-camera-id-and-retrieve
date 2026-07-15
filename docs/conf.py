@@ -16,7 +16,7 @@ copyright = "2025, jethronap"
 author = "jethronap"
 
 try:
-    release = importlib.metadata.version("cctv-identification-and-research")
+    release = importlib.metadata.version("camera-identification-and-research")
 except importlib.metadata.PackageNotFoundError:
     # Fallback for environments where the package isn't installed
     release = "0.0.0"

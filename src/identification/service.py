@@ -12,7 +12,7 @@ import numpy as np
 from loguru import logger
 from PIL import Image
 
-from src.config import paths
+from src.config import matching, paths
 from src.identification.catalog import load_catalog
 from src.identification.detector import Detector
 from src.identification.embeddings import embed_image
@@ -52,6 +52,7 @@ class IdentificationService:
     :ivar min_similarity: Minimum cosine similarity to keep a match
     :ivar crop_dir: Directory where cropped query patches are saved
     :ivar save_crops: Whether to persist cropped patches to disk
+    :ivar crop_margin: Fractional margin added around detection bboxes
     """
 
     def __init__(
@@ -63,6 +64,7 @@ class IdentificationService:
         min_similarity: float = 0.3,
         crop_dir: Path | str | None = None,
         save_crops: bool = True,
+        crop_margin: float | None = None,
     ) -> None:
         r"""Initialize identification service.
 
@@ -82,6 +84,10 @@ class IdentificationService:
         :param min_similarity: Minimum cosine similarity to keep a match
         :param crop_dir: Directory where cropped patches will be stored
         :param save_crops: Whether to save cropped patches to disk
+        :param crop_margin: Fraction of bbox width/height added symmetrically
+            around each detection before cropping. Defaults to
+            ``matching.crop_margin`` (``CIDAR_MATCH_CROP_MARGIN``); ``0.0``
+            reproduces exact-bbox crops
         """
         # Detector handles default model path resolution itself.
         self.detector = Detector(model_path=model_path, conf_threshold=conf_threshold)
@@ -94,6 +100,9 @@ class IdentificationService:
 
         self.min_similarity = min_similarity
         self.save_crops = save_crops
+        self.crop_margin = (
+            crop_margin if crop_margin is not None else matching.crop_margin
+        )
 
         if crop_dir is None:
             crop_dir = paths.output_dir / "query_patches"
@@ -140,6 +149,32 @@ class IdentificationService:
         )
 
     @staticmethod
+    def _expand_bbox(bbox: BoundingBox, margin: float) -> BoundingBox:
+        r"""
+        Expand a bounding box symmetrically by a fractional margin.
+
+        The margin is applied per axis: ``margin * width`` is added on the
+        left and right, ``margin * height`` on the top and bottom. A margin
+        of ``0.0`` returns the box unchanged. The result is not clamped to
+        image bounds; callers clamp afterwards.
+
+        :param bbox: Original bounding box
+        :param margin: Fraction of bbox side to add on each side
+        :return: Expanded bounding box
+        """
+        if margin <= 0.0:
+            return bbox
+
+        dx = int(round(margin * (bbox.x_max - bbox.x_min)))
+        dy = int(round(margin * (bbox.y_max - bbox.y_min)))
+        return BoundingBox(
+            x_min=bbox.x_min - dx,
+            y_min=bbox.y_min - dy,
+            x_max=bbox.x_max + dx,
+            y_max=bbox.y_max + dy,
+        )
+
+    @staticmethod
     def _is_valid_bbox(bbox: BoundingBox) -> bool:
         r"""
         Check if bounding box is valid (non-degenerate).
@@ -166,7 +201,8 @@ class IdentificationService:
         :return: CropInfo if valid, None if bbox is degenerate
         """
         width, height = image.size
-        clamped_bbox = self._clamp_bbox(detection.bbox, width, height)
+        expanded_bbox = self._expand_bbox(detection.bbox, self.crop_margin)
+        clamped_bbox = self._clamp_bbox(expanded_bbox, width, height)
 
         if not self._is_valid_bbox(clamped_bbox):
             logger.debug(

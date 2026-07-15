@@ -6,7 +6,7 @@ export PYTHONPATH
 cd "$(dirname "$0")" || exit
 
 echo "=========================================="
-echo "CCTV Scrapers Test Pipeline"
+echo "cIDaR Test Pipeline"
 echo "=========================================="
 echo ""
 
@@ -110,6 +110,11 @@ pytest tests/test_identification_service_unit.py -v
 echo "Done..."
 echo "==============================================="
 
+echo "Running embedding hygiene and parity tests"
+pytest tests/test_embeddings_unit.py -v
+echo "Done..."
+echo "==============================================="
+
 echo "Running frame annotation renderer tests"
 pytest tests/test_renderer.py -v
 echo "Done..."
@@ -122,6 +127,16 @@ echo "==============================================="
 
 echo "Running catalog and index tests"
 pytest tests/test_catalog_index.py -v
+echo "Done..."
+echo "==============================================="
+
+echo "Running eval degradation tests"
+pytest tests/test_eval_degradations.py -v
+echo "Done..."
+echo "==============================================="
+
+echo "Running eval runner tests (synthetic + probe)"
+pytest tests/test_eval_runners.py -v
 echo "Done..."
 echo "==============================================="
 

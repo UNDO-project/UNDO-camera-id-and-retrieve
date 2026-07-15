@@ -8,6 +8,7 @@ from src.api.models.responses import (
     StreamStatsResponse,
 )
 from src.api.dependencies import state
+from src.api.version import APP_VERSION
 
 router = APIRouter()
 
@@ -23,7 +24,7 @@ async def health_check() -> HealthResponse:
         curl http://localhost:8000/api/v1/health
         ```
     """
-    return HealthResponse(status="healthy", version="0.6.0")
+    return HealthResponse(status="healthy", version=APP_VERSION)
 
 
 @router.get("/health/ready", response_model=ReadinessResponse)

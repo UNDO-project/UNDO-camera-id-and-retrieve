@@ -391,6 +391,247 @@ def test_build_catalog_embeddings_basic(
     assert "sources" in data
 
 
+def _save_index_npz(tmp_path: Path, name: str, **arrays) -> Path:
+    """Save an npz index artifact and return its path."""
+    path = tmp_path / name
+    np.savez_compressed(path, **arrays)
+    return path
+
+
+def test_search_collapses_duplicate_camera_ids(tmp_path: Path) -> None:
+    """A product with several rows appears once, with its best score."""
+    # cam-a has two rows; the second is the exact query (score 1.0)
+    embeddings = np.array(
+        [
+            [1.0, 0.0, 0.0, 0.0],  # cam-a, variant far from query
+            [0.0, 1.0, 0.0, 0.0],  # cam-a, variant equal to query
+            [0.0, 0.0, 1.0, 0.0],  # cam-b
+        ],
+        dtype="float32",
+    )
+    embeddings_path = _save_index_npz(
+        tmp_path,
+        "dupes.npz",
+        embeddings=embeddings,
+        camera_ids=np.array(["cam-a", "cam-a", "cam-b"], dtype="U256"),
+        image_paths=np.array(["/a1.jpg", "/a2.jpg", "/b.jpg"], dtype="U1024"),
+        sources=np.array(["Test"] * 3, dtype="U128"),
+    )
+
+    index = CatalogIndex(embeddings_path)
+    query = np.array([0.0, 1.0, 0.0, 0.0], dtype="float32")
+
+    matches = index.search(query, top_k=5)
+
+    assert len(matches) == 2  # cam-a collapsed to one match
+    assert matches[0].camera_id == "cam-a"
+    assert matches[0].score == pytest.approx(1.0)
+    # The best variant's row metadata is reported
+    assert str(matches[0].catalog_image_path) == "/a2.jpg"
+    camera_ids = [m.camera_id for m in matches]
+    assert len(camera_ids) == len(set(camera_ids))
+
+
+def test_search_never_returns_same_camera_twice(tmp_path: Path) -> None:
+    """Even with many rows per product, top-k has unique camera_ids."""
+    rng = np.random.default_rng(3)
+    embeddings = rng.random((30, 16)).astype("float32")
+    embeddings /= np.linalg.norm(embeddings, axis=1, keepdims=True)
+    # 10 products x 3 variants each
+    camera_ids = np.array(
+        [f"cam-{i}" for i in range(10) for _ in range(3)], dtype="U256"
+    )
+    embeddings_path = _save_index_npz(
+        tmp_path,
+        "variants.npz",
+        embeddings=embeddings,
+        camera_ids=camera_ids,
+        image_paths=np.array(["/x.jpg"] * 30, dtype="U1024"),
+        sources=np.array(["Test"] * 30, dtype="U128"),
+        variant_tags=np.array(["orig", "warp1", "blur1"] * 10, dtype="U64"),
+    )
+
+    index = CatalogIndex(embeddings_path)
+    query = rng.random(16).astype("float32")
+
+    matches = index.search(query, top_k=10)
+
+    camera_ids_returned = [m.camera_id for m in matches]
+    assert len(camera_ids_returned) == 10
+    assert len(set(camera_ids_returned)) == 10
+
+
+def test_index_loads_artifact_without_optional_keys(tmp_path: Path) -> None:
+    """Artifacts built before variant_tags/mean_vector must keep loading."""
+    embeddings = np.eye(4, dtype="float32")
+    embeddings_path = _save_index_npz(
+        tmp_path,
+        "legacy.npz",
+        embeddings=embeddings,
+        camera_ids=np.array([f"cam-{i}" for i in range(4)], dtype="U256"),
+        image_paths=np.array([f"/img{i}.jpg" for i in range(4)], dtype="U1024"),
+        sources=np.array(["Test"] * 4, dtype="U128"),
+    )
+
+    index = CatalogIndex(embeddings_path)
+
+    assert index.variant_tags is None
+    assert index.mean_vector is None
+    matches = index.search(np.array([1.0, 0.0, 0.0, 0.0], dtype="float32"), top_k=2)
+    assert matches[0].camera_id == "cam-0"
+
+
+def test_build_with_augmentation_produces_variant_rows(
+    sample_parquet: Path, tmp_path: Path, monkeypatch
+) -> None:
+    """Augmented build yields (K+1) rows per image with valid tags."""
+    from PIL import Image
+
+    image_dir = tmp_path / "data" / "images" / "axis-m3027"
+    image_dir.mkdir(parents=True)
+    Image.new("RGB", (100, 100), color=(100, 150, 200)).save(image_dir / "img1.jpg")
+
+    catalog = load_catalog(sample_parquet)
+    for camera_id in catalog:
+        catalog[camera_id].image_files = [
+            str(tmp_path / f) for f in catalog[camera_id].image_files
+        ]
+    monkeypatch.setattr("src.identification.index.load_catalog", lambda _: catalog)
+
+    fake_embedding = np.random.rand(512).astype("float32")
+    monkeypatch.setattr(
+        "src.identification.index.embed_image", lambda _: fake_embedding
+    )
+
+    from src.identification.index import build_catalog_embeddings
+
+    embeddings_path = tmp_path / "augmented.npz"
+    build_catalog_embeddings(
+        parquet_path=sample_parquet,
+        embeddings_path=embeddings_path,
+        augment=True,
+        augment_k=4,
+    )
+
+    data = np.load(embeddings_path)
+    # 1 camera with an existing image -> 1 orig + 4 variants
+    assert data["embeddings"].shape[0] == 5
+    assert "variant_tags" in data.files
+    tags = data["variant_tags"].astype(str).tolist()
+    assert tags[0] == "orig"
+    assert len(tags) == 5
+    assert all(tag for tag in tags)
+    assert data["camera_ids"].astype(str).tolist() == ["axis-m3027"] * 5
+    assert "mean_vector" in data.files
+
+
+def test_build_with_flags_off_matches_legacy_layout(
+    sample_parquet: Path, tmp_path: Path, monkeypatch
+) -> None:
+    """With augmentation off, rows and keys match the pre-augmentation build."""
+    from PIL import Image
+
+    image_dir = tmp_path / "data" / "images" / "axis-m3027"
+    image_dir.mkdir(parents=True)
+    Image.new("RGB", (100, 100), color=(10, 20, 30)).save(image_dir / "img1.jpg")
+
+    catalog = load_catalog(sample_parquet)
+    for camera_id in catalog:
+        catalog[camera_id].image_files = [
+            str(tmp_path / f) for f in catalog[camera_id].image_files
+        ]
+    monkeypatch.setattr("src.identification.index.load_catalog", lambda _: catalog)
+
+    fake_embedding = np.random.rand(512).astype("float32")
+    monkeypatch.setattr(
+        "src.identification.index.embed_image", lambda _: fake_embedding
+    )
+
+    from src.identification.index import build_catalog_embeddings
+
+    embeddings_path = tmp_path / "plain.npz"
+    build_catalog_embeddings(
+        parquet_path=sample_parquet,
+        embeddings_path=embeddings_path,
+        augment=False,
+    )
+
+    data = np.load(embeddings_path)
+    assert data["embeddings"].shape[0] == 1
+    assert "variant_tags" not in data.files
+    assert np.array_equal(data["embeddings"][0], fake_embedding)
+    assert data["camera_ids"].astype(str).tolist() == ["axis-m3027"]
+
+
+class TestMeanCentring:
+    """Tests for optional query-time mean-centring (WP4)."""
+
+    @pytest.fixture
+    def artifact_with_mean(self, tmp_path: Path) -> Path:
+        rng = np.random.default_rng(11)
+        embeddings = rng.random((6, 8)).astype("float32")
+        embeddings /= np.linalg.norm(embeddings, axis=1, keepdims=True)
+        return _save_index_npz(
+            tmp_path,
+            "with_mean.npz",
+            embeddings=embeddings,
+            camera_ids=np.array([f"cam-{i}" for i in range(6)], dtype="U256"),
+            image_paths=np.array([f"/img{i}.jpg" for i in range(6)], dtype="U1024"),
+            sources=np.array(["Test"] * 6, dtype="U128"),
+            mean_vector=embeddings.mean(axis=0).astype("float32"),
+        )
+
+    def test_flag_off_scores_identical_to_plain_dot_product(self, artifact_with_mean):
+        """With centring off, scores are bit-identical to raw cosine."""
+        index = CatalogIndex(artifact_with_mean, mean_center=False)
+        query = np.random.default_rng(4).random(8).astype("float32")
+
+        matches = index.search(query, top_k=6)
+
+        expected = index.embeddings @ (query / np.linalg.norm(query))
+        for match in matches:
+            row = index.camera_ids.index(match.camera_id)
+            assert match.score == float(expected[row])
+
+    def test_flag_on_centres_and_renormalizes(self, artifact_with_mean):
+        """With centring on, both sides are centred then re-unit-normed."""
+        index = CatalogIndex(artifact_with_mean, mean_center=True)
+
+        # Catalogue side: search matrix rows are unit-norm after centring
+        norms = np.linalg.norm(index._search_matrix, axis=1)
+        assert norms == pytest.approx(np.ones(6), abs=1e-5)
+
+        # Query side: score equals the manually centred cosine
+        query = np.random.default_rng(4).random(8).astype("float32")
+        matches = index.search(query, top_k=1)
+
+        centred_query = query - index.mean_vector
+        centred_query /= np.linalg.norm(centred_query)
+        expected = index._search_matrix @ centred_query
+        assert matches[0].score == pytest.approx(float(expected.max()), abs=1e-6)
+
+    def test_flag_on_without_mean_vector_degrades_gracefully(self, tmp_path):
+        """Old artifacts without mean_vector behave as if centring were off."""
+        embeddings = np.eye(3, dtype="float32")
+        path = _save_index_npz(
+            tmp_path,
+            "no_mean.npz",
+            embeddings=embeddings,
+            camera_ids=np.array(["a", "b", "c"], dtype="U256"),
+            image_paths=np.array(["/a", "/b", "/c"], dtype="U1024"),
+            sources=np.array(["T"] * 3, dtype="U128"),
+        )
+
+        index = CatalogIndex(path, mean_center=True)
+        query = np.array([1.0, 0.0, 0.0], dtype="float32")
+
+        matches = index.search(query, top_k=1)
+
+        assert index._center_active is False
+        assert matches[0].camera_id == "a"
+        assert matches[0].score == pytest.approx(1.0)
+
+
 def test_build_catalog_embeddings_no_valid_images(
     sample_parquet: Path, tmp_path: Path, monkeypatch
 ) -> None:

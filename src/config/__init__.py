@@ -17,6 +17,7 @@ from dotenv import load_dotenv
 from src.config.scraper import ScraperSettings
 from src.config.paths import PathSettings
 from src.config.vendors import AxisSettings, HikVisionSettings
+from src.config.matching import MatchingSettings
 from src.config.constants import (
     HIKVISION_SELECTORS,
     HIKVISION_IP_SUBCATEGORIES,
@@ -30,6 +31,7 @@ scraper = ScraperSettings()
 paths = PathSettings()
 axis = AxisSettings()
 hikvision = HikVisionSettings()
+matching = MatchingSettings()
 
 # Ensure directories exist on first import
 paths.ensure_directories_exist()
@@ -40,6 +42,7 @@ __all__ = [
     "paths",
     "axis",
     "hikvision",
+    "matching",
     # Static constants
     "HIKVISION_SELECTORS",
     "HIKVISION_IP_SUBCATEGORIES",

@@ -10,6 +10,23 @@ building a structured dataset, validating it, and identifying cameras in real-wo
 images using a YOLOv8-based detector and CLIP-based catalog matching. Includes a
 REST API with real-time WebSocket video streaming and batch video processing capabilities.
 
+## Table of Contents
+
+- [Quickstart](#quickstart)
+- [Stages](#stages)
+- [Setup](#setup)
+- [Environment configuration (.env)](#environment-configuration-env)
+- [Running the pipeline](#running-the-pipeline)
+  - [Stage 1 – Scrape cameras](#stage-1--scrape-cameras)
+  - [Stage 2 – Build parquet dataset](#stage-2--build-parquet-dataset)
+  - [Stage 3 – Validate dataset](#stage-3--validate-dataset)
+  - [Stage 4 – Camera Identification & Retrieval](#stage-4--camera-identification--retrieval)
+  - [Retrieval evaluation (cidar-eval)](#retrieval-evaluation-cidar-eval)
+- [API Server](#api-server)
+- [Docker Deployment](#docker-deployment)
+- [Testing and Code Quality](#testing-and-code-quality)
+- [Building the documentation](#building-the-documentation)
+
 ## Quickstart
 
 This section shows the minimal set of commands to go from a fresh checkout
@@ -20,18 +37,15 @@ to running camera identification on a single image.
 uv venv
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
-# 2. Install core dependencies (includes console scripts)
+# 2. Install dependencies (includes YOLOv8/CLIP runtimes and console scripts)
 uv sync
 
-# 3. Install identification dependencies (YOLOv8 + CLIP)
-uv add ultralytics open-clip-torch torch
-
-# 4. Configure YOLOv8 weights
+# 3. Configure YOLOv8 weights
 cp .env-sample .env
-# then edit .env and set CAMERA_DETECTOR_WEIGHTS to your .pt file, or
+# then edit .env and set CIDAR_PATH_YOLO_CAMERA_WEIGHTS to your .pt file, or
 # place it at model_weights/yolov8_camera.pt to use the default.
 
-# 5. Scrape cameras (Stage 1)
+# 4. Scrape cameras (Stage 1)
 # Scrape Axis cameras (default)
 cidar-scrape
 
@@ -41,22 +55,26 @@ cidar-scrape --vendor hikvision
 # Or scrape all vendors
 cidar-scrape --vendor all
 
-# 6. Build dataset (Stage 2)
+# 5. Build dataset (Stage 2)
 cidar-build
 
-# 7. Build catalog embeddings (Stage 4 prep)
+# 6. Build catalog embeddings (Stage 4 prep)
 uv run python -c "from src.identification.index import build_catalog_embeddings; build_catalog_embeddings()"
 
-# 8. Run identification on an image (Stage 4)
+# 7. Run identification on an image (Stage 4)
 cidar-identify \
   --image path/to/photo.jpg \
   --top-k 5 \
   --min-similarity 0.3
 
-# 9. (Optional) Start the API server for remote access
+# 8. (Optional) Start the API server for remote access
 cidar-api
 # API available at http://localhost:8000
 # Interactive docs at http://localhost:8000/docs
+
+# 9. (Optional) Measure retrieval robustness
+cidar-eval synthetic --seed 42
+# Reports written to output/eval/ (JSON + CSV)
 ```
 
 ## Stages
@@ -111,10 +129,16 @@ The project is organized into sequential stages:
      - `src/identification/service.py`: `IdentificationService` orchestration
        of detection, cropping, embedding, and retrieval.
      - `src/identification/cli.py`: CLI wrapper around `IdentificationService`.
+     - `src/identification/eval/`: retrieval robustness evaluation
+       (`cidar-eval` — synthetic degradations + real probe set, shared
+       JSON/CSV reports).
      - `src/api/`: FastAPI REST API with WebSocket video streaming, batch video processing,
        and catalog browsing endpoints.
 
 ## Setup
+
+<details>
+<summary><b>Show setup instructions</b></summary>
 
 This project targets Python 3.12 and uses `uv` for environment and dependency
 management.
@@ -126,22 +150,21 @@ management.
    source .venv/bin/activate  # On Windows: .venv\\Scripts\\activate
    ```
 
-2. Install dependencies:
+2. Install dependencies (includes the YOLOv8 and CLIP runtimes):
 
    ```bash
    uv sync
    ```
 
-3. Add the YOLOv8 runtime for the detector (once):
-
-   ```bash
-   uv add ultralytics
-   ```
+</details>
 
 ## Environment configuration (.env)
 
+<details>
+<summary><b>Show environment configuration</b></summary>
+
 Environment variables are loaded via `python-dotenv`. A sample configuration is
-provided in `.env-sample`.
+provided in `.env-sample`, which documents every available variable.
 
 1. Copy the sample file:
 
@@ -153,16 +176,34 @@ provided in `.env-sample`.
 
    ```bash
    # Path to YOLOv8 camera detector weights (.pt file)
-   CAMERA_DETECTOR_WEIGHTS=/absolute/or/project/relative/path/to/model_weights/yolov8_camera.pt
+   CIDAR_PATH_YOLO_CAMERA_WEIGHTS=/absolute/or/project/relative/path/to/model_weights/yolov8_camera.pt
    ```
 
-If `CAMERA_DETECTOR_WEIGHTS` is not set, the code will fall back to the default
+If `CIDAR_PATH_YOLO_CAMERA_WEIGHTS` is not set, the code will fall back to the default
 project-relative path `model_weights/yolov8_camera.pt`. The `model_weights/` directory is
 created automatically at runtime.
+
+Retrieval behaviour is tunable via the `CIDAR_MATCH_` variables (all optional):
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `CIDAR_MATCH_CROP_MARGIN` | Fraction of bbox side added symmetrically around detection crops (`0.0` = exact-bbox crops) | `0.05` |
+| `CIDAR_MATCH_AUGMENT_ENABLED` | Embed K mildly degraded variants per product at index build time | `false` |
+| `CIDAR_MATCH_AUGMENT_K` | Number of variants per product (1–8) | `4` |
+| `CIDAR_MATCH_MEAN_CENTER` | Mean-centre embeddings before cosine similarity (needs an index with `mean_vector`) | `false` |
+
+Augmentation and mean-centring should stay off unless a `cidar-eval synthetic`
+comparison shows they help — see
+[Retrieval evaluation (cidar-eval)](#retrieval-evaluation-cidar-eval).
+
+</details>
 
 ## Running the pipeline
 
 ### Stage 1 – Scrape cameras
+
+<details>
+<summary><b>Show scraping commands</b></summary>
 
 Scrape Axis Communications cameras (default):
 ```bash
@@ -187,7 +228,12 @@ This will populate `data/images`, `data/pdfs`, and generate
 - `hikvision`: HikVision (Network cameras, PTZ cameras, Explosion-Proof series)
 - `all`: Scrape all supported vendors sequentially
 
+</details>
+
 ### Stage 2 – Build parquet dataset
+
+<details>
+<summary><b>Show build commands, versioning, and manifest recovery</b></summary>
 
 **Basic usage:**
 ```bash
@@ -277,7 +323,12 @@ cidar-build
 
 **Note:** This tool prevents having to rescrape all data when only the manifest is missing, saving significant time and network bandwidth.
 
+</details>
+
 ### Stage 3 – Validate dataset
+
+<details>
+<summary><b>Show validation commands</b></summary>
 
 **Basic usage:**
 ```bash
@@ -303,7 +354,12 @@ Version-aware validation reports include:
 - Append mode details (if applicable)
 - Parent version tracking
 
+</details>
+
 ### Stage 4 – Camera Identification & Retrieval
+
+<details>
+<summary><b>Show identification commands and embedding notes</b></summary>
 
 The identification system builds on the scraped dataset and catalog
 embeddings to identify cameras in arbitrary input images.
@@ -324,7 +380,12 @@ Key entry points:
 - ✅ After running `cidar-build` for the first time
 - ✅ After appending new cameras via `cidar-build --append`
 - ✅ After restoring or replacing `output/products.parquet`
+- ✅ After changing `CIDAR_MATCH_AUGMENT_ENABLED` / `CIDAR_MATCH_AUGMENT_K`
 - ✅ When the API returns "missing record data" errors
+
+**Note:** a running API keeps serving the index it loaded at startup —
+restart `cidar-api` after rebuilding embeddings.
+`GET /api/v1/catalog/index-info` reports which index configuration is live.
 
 **Why embeddings are separate:**
 - Computing CLIP embeddings is expensive (~40 seconds for 1500 cameras)
@@ -347,7 +408,66 @@ cidar-identify \
   --min-similarity 0.3
 ```
 
+</details>
+
+### Retrieval evaluation (cidar-eval)
+
+<details>
+<summary><b>Show evaluation commands and probe-set format</b></summary>
+
+Street crops (weathered, off-angle, backlit, low-res) live in a different
+visual domain than clean studio catalog photos. The `cidar-eval` harness
+measures how robust retrieval is to that gap, so every matching flag is
+kept or dropped based on numbers rather than intuition.
+
+**Synthetic robustness harness** — degrades each catalog image in
+controlled ways (perspective warp, small scale, blur, JPEG compression,
+lighting jitter, background swap), embeds the degraded copy, queries the
+index, and reports top-1/top-5 recovery per (degradation, severity).
+Needs zero street labels:
+
+```bash
+# Full run against the production index (deterministic under a seed)
+cidar-eval synthetic --seed 42
+
+# Quick run: first 50 products, selected degradations only
+cidar-eval synthetic --limit 50 --degradations blur,small_scale
+
+# Custom index / output directory
+cidar-eval synthetic --embeddings output/catalog_embeddings.npz --out output/eval
+```
+
+**Real probe set** — runs hand-labelled street crops through the same
+retrieval path (the external-validity check the synthetic harness cannot
+provide):
+
+```bash
+cidar-eval probe
+# or with an explicit probe set:
+cidar-eval probe --probe-set data/eval_probe/probe_set.jsonl
+```
+
+The probe set is a `probe_set.jsonl` file with one JSON object per line:
+
+```json
+{"image": "data/eval_probe/img_001.jpg", "camera_id": "axis-m3057-plr-mk-ii", "vendor": "Axis", "model": "AXIS M3057-PLRVE Mk II"}
+```
+
+Probe images live in `data/eval_probe/` and are **not tracked in git**
+(size/licensing); only the jsonl format and directory convention are.
+
+Both modes write JSON + CSV reports to `output/eval/` in the same format,
+so synthetic and probe results are directly comparable. Typical workflow:
+run a baseline, flip one `CIDAR_MATCH_*` flag (e.g. enable augmentation
+and rebuild embeddings), rerun, compare — keep the flag only if the
+curves improve.
+
+</details>
+
 ## API Server
+
+<details>
+<summary><b>Show API endpoints, examples, streaming, and configuration</b></summary>
 
 The project includes a FastAPI-based REST API that provides:
 - **Image identification**: Upload images for camera detection and catalog matching
@@ -407,11 +527,16 @@ CIDAR_API_CORS_ORIGINS='["http://localhost:3000","https://myapp.com"]' cidar-api
 
 **Catalog:**
 - `GET /api/v1/catalog/stats` - Get catalog statistics
+- `GET /api/v1/catalog/index-info` - Embeddings index metadata (read-only):
+  build timestamp, product/row counts, augmentation status, and active
+  `CIDAR_MATCH_*` flags — tells you which index configuration served a result
 - `GET /api/v1/catalog/cameras` - List cameras with pagination and filters
   - Query params: `page`, `limit`, `vendor`, `category`, `series`, `search`
 - `GET /api/v1/catalog/cameras/{camera_id}` - Get camera details by ID
 - `GET /api/v1/catalog/facets` - Get available filter options with counts
-- `POST /api/v1/catalog/reload` - Reload catalog embeddings (admin)
+- `POST /api/v1/catalog/reload` - Reload the parquet catalog (admin).
+  **Note:** this does *not* reload the embeddings index — restart the API
+  after rebuilding `catalog_embeddings.npz`
 
 **Static Files:**
 - `GET /api/v1/images/{vendor}/{series}/{filename}` - Serve camera images (CORS enabled)
@@ -797,7 +922,12 @@ Once the API server is running, visit:
 
 These provide interactive documentation where you can test all endpoints directly from your browser.
 
+</details>
+
 ## Docker Deployment
+
+<details>
+<summary><b>Show Docker build, compose, and production notes</b></summary>
 
 The API can be deployed using Docker for simplified setup and consistent environments across development and production.
 
@@ -989,7 +1119,12 @@ For production deployments:
 
 5. **Consider using Docker secrets** for sensitive configuration
 
+</details>
+
 ## Testing and Code Quality
+
+<details>
+<summary><b>Show test, coverage, lint, and pre-commit commands</b></summary>
 
 The project uses pytest for testing, ruff for linting/formatting, and pytest-cov for code coverage tracking.
 
@@ -1008,6 +1143,9 @@ pytest -k "test_detector"
 
 # Run with verbose output
 pytest -v
+
+# Run every suite individually, then the full suite with coverage
+./local_test_pipeline.sh
 ```
 
 ### Code Coverage
@@ -1090,7 +1228,12 @@ Current focus areas for improving coverage:
 3. **CLI entry points** - Test command-line interfaces
 4. **Scrapers** - Add tests for vendor-specific extraction logic
 
+</details>
+
 ## Building the documentation
+
+<details>
+<summary><b>Show Sphinx build commands</b></summary>
 
 The project uses Sphinx to generate HTML documentation from docstrings and
 reStructuredText files.
@@ -1132,3 +1275,5 @@ make clean && make html 2>&1 | grep -i "warning\|error"
 ```
 
 A successful build should produce no warnings or errors.
+
+</details>

@@ -1,8 +1,11 @@
 """Tests for configuration management."""
 
-from src.config import scraper, paths, axis, hikvision
+import pytest
+
+from src.config import scraper, paths, axis, hikvision, matching
 from src.config.scraper import ScraperSettings
 from src.config.paths import PathSettings
+from src.config.matching import MatchingSettings
 
 
 class TestScraperSettings:
@@ -85,6 +88,42 @@ class TestVendorSettings:
         """Test HikVision pagination settings."""
         assert hikvision.page_load_timeout == 30000
         assert hikvision.products_per_page == 12
+
+
+class TestMatchingSettings:
+    """Test matching/retrieval configuration."""
+
+    def test_default_values(self):
+        """Test default matching settings preserve documented defaults."""
+        assert matching.crop_margin == 0.05
+        assert matching.augment_enabled is False
+        assert matching.augment_k == 4
+        assert matching.mean_center is False
+
+    def test_env_override(self, monkeypatch):
+        """Test environment variable overrides with CIDAR_MATCH_ prefix."""
+        monkeypatch.setenv("CIDAR_MATCH_CROP_MARGIN", "0.1")
+        monkeypatch.setenv("CIDAR_MATCH_AUGMENT_ENABLED", "true")
+        monkeypatch.setenv("CIDAR_MATCH_AUGMENT_K", "8")
+        monkeypatch.setenv("CIDAR_MATCH_MEAN_CENTER", "true")
+
+        settings = MatchingSettings()
+        assert settings.crop_margin == 0.1
+        assert settings.augment_enabled is True
+        assert settings.augment_k == 8
+        assert settings.mean_center is True
+
+    def test_negative_crop_margin_rejected(self):
+        """Test crop margin must be non-negative."""
+        with pytest.raises(ValueError):
+            MatchingSettings(crop_margin=-0.1)
+
+    def test_augment_k_bounds(self):
+        """Test augment_k is capped to 1..8."""
+        with pytest.raises(ValueError):
+            MatchingSettings(augment_k=0)
+        with pytest.raises(ValueError):
+            MatchingSettings(augment_k=9)
 
 
 class TestConstants:
