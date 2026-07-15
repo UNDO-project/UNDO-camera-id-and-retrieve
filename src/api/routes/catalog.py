@@ -1,12 +1,18 @@
 """Catalog management endpoints."""
 
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Dict, Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from loguru import logger
 
 from src.api.dependencies import get_identification_service, get_catalog_service, state
-from src.api.models.responses import CatalogStatsResponse
+from src.api.models.responses import (
+    CatalogStatsResponse,
+    IndexInfoResponse,
+    MatchingFlagsInfo,
+)
 from src.api.models.catalog import (
     CatalogListResponse,
     CatalogFacetsResponse,
@@ -87,6 +93,83 @@ async def get_catalog_stats(
         logger.error(f"Error getting catalog stats: {e}")
         raise HTTPException(
             status_code=500, detail=f"Error getting catalog stats: {str(e)}"
+        )
+
+
+@router.get("/index-info", response_model=IndexInfoResponse)
+async def get_index_info(
+    service: IdentificationService = Depends(get_identification_service),
+) -> IndexInfoResponse:
+    r"""Get read-only metadata about the loaded embeddings index.
+
+    Once retrieval depends on matching flags and index build parameters,
+    "why did results change?" becomes a real debugging question. This
+    endpoint reports which index configuration is serving requests:
+    build timestamp, row/product counts, augmentation status, and the
+    active ``CIDAR_MATCH_*`` settings.
+
+    :param service: Injected identification service
+    :return: Index metadata and active matching flags
+
+    Example:
+        ```bash
+        curl http://localhost:8000/api/v1/catalog/index-info
+        ```
+
+    .. note::
+        The index is loaded once at service initialization. After
+        rebuilding embeddings (e.g. enabling augmentation), restart the
+        API — ``/catalog/reload`` reloads the parquet catalog, not the
+        embeddings index.
+    """
+    try:
+        from src.config import matching
+
+        index = service.index
+
+        embeddings = getattr(index, "embeddings", None)
+        total_rows = int(embeddings.shape[0]) if embeddings is not None else 0
+        embedding_dim = (
+            int(embeddings.shape[1])
+            if embeddings is not None and embeddings.ndim == 2
+            else 0
+        )
+
+        camera_ids = getattr(index, "camera_ids", None) or []
+        total_products = len(set(camera_ids))
+        variant_tags = getattr(index, "variant_tags", None)
+
+        embeddings_path = getattr(index, "embeddings_path", None)
+        built_at = None
+        if embeddings_path is not None and Path(embeddings_path).exists():
+            built_at = datetime.fromtimestamp(
+                Path(embeddings_path).stat().st_mtime, tz=timezone.utc
+            ).isoformat(timespec="seconds")
+
+        return IndexInfoResponse(
+            embeddings_path=str(embeddings_path) if embeddings_path else "unknown",
+            built_at=built_at,
+            total_rows=total_rows,
+            total_products=total_products,
+            embedding_dim=embedding_dim,
+            augmented=variant_tags is not None,
+            variants_per_product=(
+                round(total_rows / total_products, 2) if total_products else 0.0
+            ),
+            mean_vector_present=getattr(index, "mean_vector", None) is not None,
+            matching=MatchingFlagsInfo(
+                crop_margin=matching.crop_margin,
+                augment_enabled=matching.augment_enabled,
+                augment_k=matching.augment_k,
+                mean_center=matching.mean_center,
+                mean_center_active=bool(getattr(index, "_center_active", False)),
+            ),
+        )
+
+    except Exception as e:
+        logger.error(f"Error getting index info: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Error getting index info: {str(e)}"
         )
 
 
