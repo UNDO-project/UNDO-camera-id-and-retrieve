@@ -48,6 +48,61 @@ class ReadinessResponse(BaseModel):
     )
 
 
+class MatchingFlagsInfo(BaseModel):
+    """Active matching-related settings (CIDAR_MATCH_* flags)."""
+
+    crop_margin: float = Field(
+        ..., description="Fractional margin applied around detection crops"
+    )
+    augment_enabled: bool = Field(
+        ..., description="Whether catalogue augmentation is enabled for builds"
+    )
+    augment_k: int = Field(
+        ..., description="Number of embedding variants per product when augmenting"
+    )
+    mean_center: bool = Field(
+        ..., description="Whether query-time mean-centring is requested"
+    )
+    mean_center_active: bool = Field(
+        ...,
+        description=(
+            "Whether mean-centring is actually applied by the loaded index "
+            "(requires a mean_vector in the artifact)"
+        ),
+    )
+
+
+class IndexInfoResponse(BaseModel):
+    """Read-only metadata about the loaded embeddings index.
+
+    Retrieval results depend on how the index was built and which
+    matching flags are active; this endpoint tells the caller which
+    index configuration served their request.
+    """
+
+    embeddings_path: str = Field(..., description="Path to the loaded .npz artifact")
+    built_at: Optional[str] = Field(
+        None, description="ISO timestamp of the artifact file (mtime)"
+    )
+    total_rows: int = Field(..., description="Number of embedding rows in the index")
+    total_products: int = Field(
+        ..., description="Number of unique products (camera_ids) in the index"
+    )
+    embedding_dim: int = Field(..., description="Embedding dimensionality")
+    augmented: bool = Field(
+        ..., description="Whether the index holds variant rows (variant_tags present)"
+    )
+    variants_per_product: float = Field(
+        ..., description="Average embedding rows per product"
+    )
+    mean_vector_present: bool = Field(
+        ..., description="Whether the artifact contains a catalogue mean vector"
+    )
+    matching: MatchingFlagsInfo = Field(
+        ..., description="Active CIDAR_MATCH_* settings"
+    )
+
+
 class ErrorResponse(BaseModel):
     """Standard error response."""
 
