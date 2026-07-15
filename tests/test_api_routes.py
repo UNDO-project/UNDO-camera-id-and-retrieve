@@ -53,6 +53,10 @@ class FakeCatalogIndex:
             Path(embeddings_path) if embeddings_path is not None else None
         )
         self.embeddings = np.random.rand(10, 512)  # Fake embeddings
+        self.camera_ids = [f"test-cam-{i}" for i in range(10)]
+        self.variant_tags = None
+        self.mean_vector = None
+        self._center_active = False
 
     def search(self, query_vector: np.ndarray, top_k: int = 5) -> List[CameraMatch]:
         """Return fake matches."""
@@ -223,6 +227,49 @@ def test_catalog_stats_endpoint(test_client: TestClient, monkeypatch: Any) -> No
     assert "embeddings_loaded" in data
     assert "embedding_count" in data
     assert "catalog_path" in data
+
+
+def test_health_version_matches_app_version(test_client: TestClient) -> None:
+    """Health endpoint reports the resolved app version, not a hardcode."""
+    from src.api.version import APP_VERSION
+
+    response = test_client.get("/api/v1/health")
+
+    assert response.status_code == 200
+    assert response.json()["version"] == APP_VERSION
+
+
+def test_index_info_endpoint(test_client: TestClient) -> None:
+    """Test GET /api/v1/catalog/index-info reports index metadata + flags."""
+    response = test_client.get("/api/v1/catalog/index-info")
+
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["total_rows"] == 10
+    assert data["total_products"] == 10
+    assert data["embedding_dim"] == 512
+    assert data["augmented"] is False
+    assert data["variants_per_product"] == 1.0
+    assert data["mean_vector_present"] is False
+
+    flags = data["matching"]
+    assert set(flags) == {
+        "crop_margin",
+        "augment_enabled",
+        "augment_k",
+        "mean_center",
+        "mean_center_active",
+    }
+    assert isinstance(flags["crop_margin"], float)
+    assert flags["mean_center_active"] is False
+
+
+def test_index_info_is_read_only(test_client: TestClient) -> None:
+    """No mutating verbs on index-info: eval/rebuild are not API-triggerable."""
+    for method in ("post", "put", "delete"):
+        response = getattr(test_client, method)("/api/v1/catalog/index-info")
+        assert response.status_code == 405
 
 
 def test_catalog_reload_endpoint(test_client: TestClient) -> None:
