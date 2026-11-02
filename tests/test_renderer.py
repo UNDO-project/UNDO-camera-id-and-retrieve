@@ -2,6 +2,7 @@
 
 import time
 from pathlib import Path
+from unittest.mock import patch
 
 import numpy as np
 import pytest
@@ -73,6 +74,7 @@ class TestRenderConfig:
         assert config.box_color == (0, 255, 0)  # Green
         assert config.box_thickness == 2
         assert config.font_scale == 0.6
+        assert config.reference_height == 480
         assert config.show_confidence is True
         assert config.show_manufacturer is True
         assert config.style == "detailed"
@@ -376,3 +378,57 @@ class TestColorConversions:
         except Exception:
             # Expected - renderer is designed for RGB frames
             pass
+
+
+class TestLabelScaling:
+    """Test suite for resolution-aware label and box scaling."""
+
+    def test_scale_factor_at_or_below_reference_is_one(self):
+        """Frames at or below the reference height are not scaled."""
+        renderer = FrameRenderer()
+        assert renderer._scale_factor(np.zeros((480, 640, 3), np.uint8)) == 1.0
+        assert renderer._scale_factor(np.zeros((240, 320, 3), np.uint8)) == 1.0
+
+    def test_scale_factor_grows_with_height(self):
+        """A 1080p frame scales by 1080/480."""
+        renderer = FrameRenderer()
+        factor = renderer._scale_factor(np.zeros((1080, 1920, 3), np.uint8))
+        assert factor == pytest.approx(2.25)
+
+    def test_scale_factor_respects_custom_reference(self):
+        """Custom reference_height changes the factor."""
+        renderer = FrameRenderer(RenderConfig(reference_height=1080))
+        assert renderer._scale_factor(np.zeros((1080, 1920, 3), np.uint8)) == 1.0
+
+    def test_larger_frame_draws_larger_text(self, test_detection):
+        """Text and box sizes are passed to OpenCV scaled on a tall frame."""
+        renderer = FrameRenderer()
+        frame = np.zeros((1080, 1920, 3), np.uint8)
+
+        with (
+            patch("src.identification.renderer.cv2.putText") as put_text,
+            patch("src.identification.renderer.cv2.rectangle") as rectangle,
+        ):
+            renderer.annotate_frame(frame, [test_detection])
+
+        # Bounding box thickness: round(2 * 2.25) == 4
+        assert rectangle.call_args_list[0].args[4] == 4
+        # Font scale and thickness: 0.6 * 2.25, round(2 * 2.25) == 4
+        _, _, _, _, font_scale, _, thickness, _ = put_text.call_args.args
+        assert font_scale == pytest.approx(1.35)
+        assert thickness == 4
+
+    def test_reference_frame_draws_unscaled_text(self, test_frame, test_detection):
+        """A 480p frame keeps the configured sizes exactly."""
+        renderer = FrameRenderer()
+
+        with (
+            patch("src.identification.renderer.cv2.putText") as put_text,
+            patch("src.identification.renderer.cv2.rectangle") as rectangle,
+        ):
+            renderer.annotate_frame(test_frame, [test_detection])
+
+        assert rectangle.call_args_list[0].args[4] == 2
+        _, _, _, _, font_scale, _, thickness, _ = put_text.call_args.args
+        assert font_scale == 0.6
+        assert thickness == 2
