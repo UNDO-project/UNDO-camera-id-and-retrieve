@@ -15,12 +15,19 @@ from src.models.identification import CameraDetection, CameraMatch
 
 @dataclass
 class RenderConfig:
-    """Configuration for frame rendering."""
+    """Configuration for frame rendering.
+
+    Sizes (``box_thickness``, ``font_scale``, ``font_thickness``) are defined
+    for a frame of ``reference_height`` pixels and scaled up proportionally
+    for taller frames so labels stay legible at 1080p and above. Frames at or
+    below the reference height are drawn with the values as given.
+    """
 
     box_color: tuple[int, int, int] = (0, 255, 0)  # BGR green
     box_thickness: int = 2
     font_scale: float = 0.6
     font_thickness: int = 2
+    reference_height: int = 480
     show_confidence: bool = True
     show_manufacturer: bool = True
     style: Literal["minimal", "detailed"] = "detailed"
@@ -42,6 +49,14 @@ class FrameRenderer:
         :param config: Optional render configuration (uses defaults if None)
         """
         self.config = config or RenderConfig()
+
+    def _scale_factor(self, frame: np.ndarray) -> float:
+        r"""Compute the size multiplier for a frame.
+
+        :param frame: Frame whose height determines the factor
+        :return: ``frame_height / reference_height``, never below 1.0
+        """
+        return max(1.0, frame.shape[0] / self.config.reference_height)
 
     def annotate_frame(
         self,
@@ -69,6 +84,9 @@ class FrameRenderer:
             # We'll work in BGR for OpenCV
             annotated = cv2.cvtColor(annotated, cv2.COLOR_RGB2BGR)
 
+        scale = self._scale_factor(annotated)
+        box_thickness = max(1, round(self.config.box_thickness * scale))
+
         for idx, detection in enumerate(detections):
             # Get bounding box coordinates
             x1, y1 = detection.bbox.x_min, detection.bbox.y_min
@@ -80,7 +98,7 @@ class FrameRenderer:
                 (x1, y1),
                 (x2, y2),
                 self.config.box_color,
-                self.config.box_thickness,
+                box_thickness,
             )
 
             # Prepare labels
@@ -105,7 +123,7 @@ class FrameRenderer:
                 labels.append(f"{manufacturer} ({similarity_pct:.1f}%)")
 
             # Draw labels
-            self._draw_labels(annotated, labels, x1, y1, x2, y2)
+            self._draw_labels(annotated, labels, x1, y1, x2, y2, scale)
 
         # Convert back to RGB for consistency
         annotated = cv2.cvtColor(annotated, cv2.COLOR_BGR2RGB)
@@ -120,6 +138,7 @@ class FrameRenderer:
         y1: int,
         x2: int,
         y2: int,
+        scale: float = 1.0,
     ) -> None:
         r"""Draw text labels above and below bounding box.
 
@@ -129,37 +148,42 @@ class FrameRenderer:
         :param y1: Top coordinate of bounding box
         :param x2: Right coordinate of bounding box
         :param y2: Bottom coordinate of bounding box
+        :param scale: Size multiplier from :meth:`_scale_factor`
         """
         font = cv2.FONT_HERSHEY_SIMPLEX
+        font_scale = self.config.font_scale * scale
+        font_thickness = max(1, round(self.config.font_thickness * scale))
+        pad = round(5 * scale)
+        gap = round(10 * scale)
 
         for i, label in enumerate(labels):
             # Get text size for background rectangle
             (text_width, text_height), baseline = cv2.getTextSize(
-                label, font, self.config.font_scale, self.config.font_thickness
+                label, font, font_scale, font_thickness
             )
 
             # Position labels above box (first label) or below (subsequent labels)
             if i == 0:
                 # Above box
-                label_y = y1 - 10
-                bg_y1 = label_y - text_height - 5
-                bg_y2 = label_y + baseline + 5
+                label_y = y1 - gap
+                bg_y1 = label_y - text_height - pad
+                bg_y2 = label_y + baseline + pad
             else:
                 # Below box
-                label_y = y2 + 20 + (i - 1) * (text_height + 10)
-                bg_y1 = label_y - text_height - 5
-                bg_y2 = label_y + baseline + 5
+                label_y = y2 + 2 * gap + (i - 1) * (text_height + gap)
+                bg_y1 = label_y - text_height - pad
+                bg_y2 = label_y + baseline + pad
 
             # Ensure label stays within frame bounds
-            label_y = max(text_height + 5, label_y)
-            label_y = min(frame.shape[0] - 5, label_y)
+            label_y = max(text_height + pad, label_y)
+            label_y = min(frame.shape[0] - pad, label_y)
 
             label_x = x1
 
             # Draw background rectangle if enabled
             if self.config.label_background:
                 bg_x1 = label_x
-                bg_x2 = label_x + text_width + 10
+                bg_x2 = label_x + text_width + 2 * pad
 
                 cv2.rectangle(
                     frame,
@@ -173,11 +197,11 @@ class FrameRenderer:
             cv2.putText(
                 frame,
                 label,
-                (label_x + 5, label_y),
+                (label_x + pad, label_y),
                 font,
-                self.config.font_scale,
+                font_scale,
                 self.config.label_text_color,
-                self.config.font_thickness,
+                font_thickness,
                 cv2.LINE_AA,
             )
 
