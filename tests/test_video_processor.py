@@ -78,6 +78,7 @@ class TestVideoProcessingConfig:
         assert config.identification_mode == "detect_only"
         assert config.output_format == "mp4"
         assert config.jpeg_quality == 85
+        assert config.high_quality is False
 
     def test_custom_config(self):
         """Test custom configuration values."""
@@ -86,10 +87,12 @@ class TestVideoProcessingConfig:
             identification_mode="full",
             output_format="mp4",
             jpeg_quality=90,
+            high_quality=True,
         )
         assert config.target_fps == 30
         assert config.identification_mode == "full"
         assert config.jpeg_quality == 90
+        assert config.high_quality is True
 
 
 class TestVideoProcessorTask:
@@ -371,3 +374,104 @@ class TestVideoProcessorIntegration:
         assert final_progress.status == "completed"
         assert final_progress.frames_processed > 0
         assert final_progress.elapsed_seconds > 0
+
+
+class TestOpenWriter:
+    """Test suite for codec selection in VideoProcessorTask._open_writer."""
+
+    @staticmethod
+    def _fake_writer(opened: bool) -> MagicMock:
+        writer = MagicMock()
+        writer.isOpened.return_value = opened
+        return writer
+
+    def test_default_uses_mp4v(self, tmp_path: Path):
+        """Default config requests the mp4v codec only."""
+        processor = VideoProcessorTask("w-1", VideoProcessingConfig())
+        writer = self._fake_writer(True)
+
+        with (
+            patch("src.api.tasks.video_processor.cv2.VideoWriter_fourcc") as fourcc,
+            patch(
+                "src.api.tasks.video_processor.cv2.VideoWriter", return_value=writer
+            ) as video_writer,
+        ):
+            result = processor._open_writer(tmp_path / "out.mp4", 15.0, (320, 240))
+
+        assert result is writer
+        fourcc.assert_called_once_with("m", "p", "4", "v")
+        video_writer.assert_called_once()
+
+    def test_high_quality_uses_configured_codec(self, tmp_path: Path):
+        """high_quality=True requests the configured H.264 codec first."""
+        processor = VideoProcessorTask("w-2", VideoProcessingConfig(high_quality=True))
+        writer = self._fake_writer(True)
+
+        with (
+            patch("src.api.tasks.video_processor.cv2.VideoWriter_fourcc") as fourcc,
+            patch("src.api.tasks.video_processor.cv2.VideoWriter", return_value=writer),
+        ):
+            result = processor._open_writer(tmp_path / "out.mp4", 15.0, (320, 240))
+
+        assert result is writer
+        fourcc.assert_called_once_with("a", "v", "c", "1")
+
+    def test_high_quality_falls_back_to_mp4v(self, tmp_path: Path):
+        """If the H.264 encoder is unavailable, mp4v is used instead."""
+        processor = VideoProcessorTask("w-3", VideoProcessingConfig(high_quality=True))
+        failed = self._fake_writer(False)
+        succeeded = self._fake_writer(True)
+
+        with (
+            patch("src.api.tasks.video_processor.cv2.VideoWriter_fourcc") as fourcc,
+            patch(
+                "src.api.tasks.video_processor.cv2.VideoWriter",
+                side_effect=[failed, succeeded],
+            ),
+        ):
+            result = processor._open_writer(tmp_path / "out.mp4", 15.0, (320, 240))
+
+        assert result is succeeded
+        failed.release.assert_called_once()
+        assert [c.args for c in fourcc.call_args_list] == [
+            ("a", "v", "c", "1"),
+            ("m", "p", "4", "v"),
+        ]
+
+    def test_raises_when_no_codec_opens(self, tmp_path: Path):
+        """RuntimeError when neither codec can open a writer."""
+        processor = VideoProcessorTask("w-4", VideoProcessingConfig(high_quality=True))
+
+        with (
+            patch("src.api.tasks.video_processor.cv2.VideoWriter_fourcc"),
+            patch(
+                "src.api.tasks.video_processor.cv2.VideoWriter",
+                side_effect=[self._fake_writer(False), self._fake_writer(False)],
+            ),
+            pytest.raises(RuntimeError, match="Failed to create output video"),
+        ):
+            processor._open_writer(tmp_path / "out.mp4", 15.0, (320, 240))
+
+    @pytest.mark.asyncio
+    async def test_process_video_high_quality(
+        self,
+        clean_task_store: TaskStore,
+        temp_video_file: Path,
+        mock_async_service,
+        tmp_path: Path,
+    ):
+        """End-to-end run with high_quality=True produces a readable output file."""
+        task_id = "process-hq"
+        progress = clean_task_store.create(task_id)
+        progress.input_path = temp_video_file
+        clean_task_store.update(task_id, progress)
+
+        output_path = tmp_path / "output_hq.mp4"
+        config = VideoProcessingConfig(target_fps=15, high_quality=True)
+        processor = VideoProcessorTask(task_id, config, service=mock_async_service)
+
+        await processor.process(temp_video_file, output_path)
+
+        assert output_path.exists()
+        assert output_path.stat().st_size > 0
+        assert clean_task_store.get(task_id).status == "completed"
