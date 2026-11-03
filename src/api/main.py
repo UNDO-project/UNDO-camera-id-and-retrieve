@@ -1,5 +1,7 @@
 """FastAPI application for camera identification service."""
 
+import asyncio
+import contextlib
 from contextlib import asynccontextmanager
 from typing import Dict, Any
 
@@ -8,9 +10,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from loguru import logger
 
-from src.api.config import settings
+from src.api.config import settings, video_settings
 from src.api.routes import health, identification, catalog, video_stream, video_upload
 from src.api.exceptions import generic_exception_handler
+from src.api.tasks.cleanup import purge_video_dirs, run_sweeper
 from src.api.version import APP_VERSION
 from src.config import paths
 
@@ -28,10 +31,19 @@ async def lifespan(app: FastAPI):
     logger.info(f"CORS origins: {settings.cors_origins}")
     logger.info("API documentation available at /docs")
 
+    # Zero retention: drop files orphaned by a previous run, then start the
+    # sweeper that removes finished tasks after their retention window.
+    purge_video_dirs()
+    sweeper = asyncio.create_task(run_sweeper(video_settings.cleanup_interval_seconds))
+
     yield  # Application runs here
 
     # Shutdown
     logger.info("Shutting down cIDaR API server...")
+
+    sweeper.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await sweeper
 
     # Import here to avoid circular dependency
     from src.api.dependencies import state

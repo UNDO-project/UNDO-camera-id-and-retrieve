@@ -91,6 +91,11 @@ Background tasks
    :undoc-members:
    :show-inheritance:
 
+.. automodule:: src.api.tasks.cleanup
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Websocket
 ---------
 

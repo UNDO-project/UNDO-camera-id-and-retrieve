@@ -57,12 +57,35 @@ def temp_video_file(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def mock_video_uploads_dir(tmp_path: Path):
-    """Mock the video uploads directory to use tmp_path."""
+def video_dirs(tmp_path: Path) -> Generator[tuple[Path, Path], None, None]:
+    """Point uploads and outputs at tmp_path and stub the ML service.
+
+    The upload endpoint schedules processing as a background task that runs
+    inside TestClient before the response is returned, so without this the
+    output would land in the real ``output/video_outputs``.
+    """
+    from unittest.mock import AsyncMock, MagicMock
+
     uploads_dir = tmp_path / "video_uploads"
-    uploads_dir.mkdir(parents=True, exist_ok=True)
-    with patch("src.config.paths.video_uploads_dir", uploads_dir):
-        yield uploads_dir
+    outputs_dir = tmp_path / "video_outputs"
+    uploads_dir.mkdir()
+    outputs_dir.mkdir()
+
+    service = MagicMock()
+    service.detect_frame = AsyncMock(return_value=[])
+    service.identify_frame = AsyncMock(return_value=[])
+
+    with (
+        patch("src.api.routes.video_upload.paths") as route_paths,
+        patch("src.api.tasks.video_processor.paths") as task_paths,
+        patch(
+            "src.api.tasks.video_processor.AsyncIdentificationService",
+            return_value=service,
+        ),
+    ):
+        route_paths.video_uploads_dir = uploads_dir
+        task_paths.video_outputs_dir = outputs_dir
+        yield uploads_dir, outputs_dir
 
 
 class TestVideoUploadEndpoint:
@@ -73,21 +96,14 @@ class TestVideoUploadEndpoint:
         test_client: TestClient,
         temp_video_file: Path,
         clean_task_store: TaskStore,
-        tmp_path: Path,
+        video_dirs: tuple[Path, Path],
     ):
         """Test successful video upload."""
-        # Mock the paths to use tmp_path
-        uploads_dir = tmp_path / "video_uploads"
-        uploads_dir.mkdir(parents=True, exist_ok=True)
-
-        with patch("src.api.routes.video_upload.paths") as mock_paths:
-            mock_paths.video_uploads_dir = uploads_dir
-
-            with open(temp_video_file, "rb") as f:
-                response = test_client.post(
-                    "/api/v1/process-video",
-                    files={"file": ("test_video.mp4", f, "video/mp4")},
-                )
+        with open(temp_video_file, "rb") as f:
+            response = test_client.post(
+                "/api/v1/process-video",
+                files={"file": ("test_video.mp4", f, "video/mp4")},
+            )
 
         assert response.status_code == 202
         data = response.json()
@@ -97,17 +113,42 @@ class TestVideoUploadEndpoint:
         assert data["file_size_mb"] > 0
         assert "created_at" in data
 
+    def test_upload_stored_under_task_id_only(
+        self,
+        test_client: TestClient,
+        temp_video_file: Path,
+        clean_task_store: TaskStore,
+        video_dirs: tuple[Path, Path],
+    ):
+        """The file on disk carries the task id, not the uploaded filename."""
+        from unittest.mock import AsyncMock
+
+        uploads_dir, _ = video_dirs
+
+        # Stub processing so the upload is still on disk after the request
+        with patch(
+            "src.api.routes.video_upload.run_video_processing_task", new=AsyncMock()
+        ):
+            with open(temp_video_file, "rb") as f:
+                response = test_client.post(
+                    "/api/v1/process-video",
+                    files={"file": ("Private Footage.MP4", f, "video/mp4")},
+                )
+
+        assert response.status_code == 202
+        task_id = response.json()["task_id"]
+        progress = clean_task_store.get(task_id)
+        assert progress.filename == "Private Footage.MP4"
+        assert [p.name for p in uploads_dir.iterdir()] == [f"{task_id}.mp4"]
+
     def test_upload_video_with_options(
         self,
         test_client: TestClient,
         temp_video_file: Path,
         clean_task_store: TaskStore,
-        tmp_path: Path,
+        video_dirs: tuple[Path, Path],
     ):
         """Test video upload with custom processing options."""
-        uploads_dir = tmp_path / "video_uploads"
-        uploads_dir.mkdir(parents=True, exist_ok=True)
-
         options = json.dumps(
             {
                 "target_fps": 10,
@@ -117,15 +158,12 @@ class TestVideoUploadEndpoint:
             }
         )
 
-        with patch("src.api.routes.video_upload.paths") as mock_paths:
-            mock_paths.video_uploads_dir = uploads_dir
-
-            with open(temp_video_file, "rb") as f:
-                response = test_client.post(
-                    "/api/v1/process-video",
-                    files={"file": ("test_video.mp4", f, "video/mp4")},
-                    data={"options": options},
-                )
+        with open(temp_video_file, "rb") as f:
+            response = test_client.post(
+                "/api/v1/process-video",
+                files={"file": ("test_video.mp4", f, "video/mp4")},
+                data={"options": options},
+            )
 
         assert response.status_code == 202
         data = response.json()
@@ -143,21 +181,15 @@ class TestVideoUploadEndpoint:
         test_client: TestClient,
         temp_video_file: Path,
         clean_task_store: TaskStore,
-        tmp_path: Path,
+        video_dirs: tuple[Path, Path],
     ):
         """Test that omitting high_quality keeps the default (off)."""
-        uploads_dir = tmp_path / "video_uploads"
-        uploads_dir.mkdir(parents=True, exist_ok=True)
-
-        with patch("src.api.routes.video_upload.paths") as mock_paths:
-            mock_paths.video_uploads_dir = uploads_dir
-
-            with open(temp_video_file, "rb") as f:
-                response = test_client.post(
-                    "/api/v1/process-video",
-                    files={"file": ("test_video.mp4", f, "video/mp4")},
-                    data={"options": json.dumps({"target_fps": 15})},
-                )
+        with open(temp_video_file, "rb") as f:
+            response = test_client.post(
+                "/api/v1/process-video",
+                files={"file": ("test_video.mp4", f, "video/mp4")},
+                data={"options": json.dumps({"target_fps": 15})},
+            )
 
         assert response.status_code == 202
         progress = clean_task_store.get(response.json()["task_id"])
@@ -308,6 +340,32 @@ class TestVideoStatusEndpoint:
         assert data["frames_processed"] == 50
         assert data["elapsed_seconds"] >= 0
 
+    def test_get_status_expires_at(
+        self,
+        test_client: TestClient,
+        clean_task_store: TaskStore,
+        tmp_path: Path,
+    ):
+        """expires_at is null while processing and set once finished."""
+        progress = clean_task_store.create("expiry-test")
+        progress.start()
+        clean_task_store.update("expiry-test", progress)
+
+        response = test_client.get("/api/v1/video-status/expiry-test")
+        assert response.status_code == 200
+        assert response.json()["expires_at"] is None
+
+        output_path = tmp_path / "output.mp4"
+        output_path.touch()
+        progress.complete(output_path)
+        clean_task_store.update("expiry-test", progress)
+
+        response = test_client.get("/api/v1/video-status/expiry-test")
+        assert response.status_code == 200
+        assert response.json()["expires_at"] == progress.expires_at.isoformat().replace(
+            "+00:00", "Z"
+        )
+
     def test_get_status_completed_task(
         self,
         test_client: TestClient,
@@ -455,6 +513,58 @@ class TestVideoDeleteEndpoint:
         response = test_client.delete("/api/v1/video-task/nonexistent")
 
         assert response.status_code == 404
+
+
+class TestZeroRetentionFlow:
+    """Upload, process, download, expire: nothing is left on disk."""
+
+    def test_nothing_left_after_window(
+        self,
+        test_client: TestClient,
+        temp_video_file: Path,
+        clean_task_store: TaskStore,
+        video_dirs: tuple[Path, Path],
+    ):
+        from datetime import datetime, timedelta, timezone
+
+        from src.api.config import video_settings
+        from src.api.tasks.cleanup import sweep_once
+
+        uploads_dir, outputs_dir = video_dirs
+
+        with open(temp_video_file, "rb") as f:
+            response = test_client.post(
+                "/api/v1/process-video",
+                files={"file": ("test_video.mp4", f, "video/mp4")},
+            )
+
+        assert response.status_code == 202
+        task_id = response.json()["task_id"]
+
+        # Background task has run inside TestClient: upload gone, output present
+        progress = clean_task_store.get(task_id)
+        assert progress.status == "completed"
+        assert progress.input_path is None
+        assert list(uploads_dir.iterdir()) == []
+        assert [p.name for p in outputs_dir.iterdir()] == [f"{task_id}_processed.mp4"]
+
+        response = test_client.get(f"/api/v1/video-download/{task_id}")
+        assert response.status_code == 200
+        assert (
+            response.headers["content-disposition"]
+            == 'attachment; filename="test_video_processed.mp4"'
+        )
+
+        # Advance the clock past the retention window and sweep
+        progress.completed_at = datetime.now(timezone.utc) - timedelta(
+            minutes=video_settings.task_retention_minutes + 1
+        )
+        clean_task_store.update(task_id, progress)
+
+        assert sweep_once() == 1
+        assert list(outputs_dir.iterdir()) == []
+        assert clean_task_store.get(task_id) is None
+        assert test_client.get(f"/api/v1/video-status/{task_id}").status_code == 404
 
 
 class TestTaskStore:

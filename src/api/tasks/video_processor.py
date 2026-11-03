@@ -300,6 +300,8 @@ async def run_video_processing_task(task_id: str) -> None:
 
     This function is designed to be called from FastAPI BackgroundTasks.
     It retrieves task information from the store and processes the video.
+    The uploaded file is deleted once processing has ended, whether it
+    succeeded or failed.
 
     :param task_id: Unique identifier of the task to process
     """
@@ -335,3 +337,11 @@ async def run_video_processing_task(task_id: str) -> None:
     except Exception as e:
         logger.error(f"Task {task_id}: Processing failed - {e}")
         # Error already recorded in progress by processor
+    finally:
+        # Zero retention: the upload is not needed once processing has ended.
+        try:
+            progress.input_path.unlink(missing_ok=True)
+        except OSError as e:
+            logger.warning(f"Task {task_id}: Failed to delete upload - {e}")
+        progress.input_path = None
+        task_store.update(task_id, progress)

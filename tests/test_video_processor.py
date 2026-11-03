@@ -292,6 +292,39 @@ class TestRunVideoProcessingTask:
                 MockProcessor.assert_called_once()
                 mock_processor.process.assert_called_once()
 
+        # Zero retention: the upload is gone once processing has ended
+        assert not temp_video_file.exists()
+        assert clean_task_store.get(task_id).input_path is None
+
+    @pytest.mark.asyncio
+    async def test_run_task_deletes_upload_on_failure(
+        self,
+        clean_task_store: TaskStore,
+        temp_video_file: Path,
+        tmp_path: Path,
+    ):
+        """The upload is deleted even when processing raises."""
+        task_id = "run-fail"
+        progress = clean_task_store.create(task_id)
+        progress.input_path = temp_video_file
+        clean_task_store.update(task_id, progress)
+
+        with patch("src.api.tasks.video_processor.paths") as mock_paths:
+            mock_paths.video_outputs_dir = tmp_path / "outputs"
+            mock_paths.video_outputs_dir.mkdir(parents=True, exist_ok=True)
+
+            with patch(
+                "src.api.tasks.video_processor.VideoProcessorTask"
+            ) as MockProcessor:
+                mock_processor = MagicMock()
+                mock_processor.process = AsyncMock(side_effect=RuntimeError("boom"))
+                MockProcessor.return_value = mock_processor
+
+                await run_video_processing_task(task_id)
+
+        assert not temp_video_file.exists()
+        assert clean_task_store.get(task_id).input_path is None
+
 
 class TestVideoProcessorIntegration:
     """Integration tests for video processor (requires OpenCV)."""

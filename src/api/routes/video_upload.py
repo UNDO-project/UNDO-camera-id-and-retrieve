@@ -17,6 +17,7 @@ from src.api.models.video import (
     VideoUploadResponse,
     VideoValidationResult,
 )
+from src.api.tasks.cleanup import delete_task_files
 from src.api.tasks.store import task_store
 from src.api.tasks.video_processor import run_video_processing_task
 from src.config import paths
@@ -201,20 +202,21 @@ async def upload_video(
             detail=f"Video validation failed: {'; '.join(validation.errors)}",
         )
 
-    # Generate task ID and paths
+    # Generate task ID and paths. The file on disk carries only the task id;
+    # the original name stays in memory for the status and download responses.
     task_id = str(uuid.uuid4())
     filename = file.filename or f"video_{task_id}.mp4"
-    safe_filename = f"{task_id}_{Path(filename).name}"
+    suffix = Path(filename).suffix.lower() or ".mp4"
 
     # Ensure upload directory exists
     paths.video_uploads_dir.mkdir(parents=True, exist_ok=True)
-    upload_path = paths.video_uploads_dir / safe_filename
+    upload_path = paths.video_uploads_dir / f"{task_id}{suffix}"
 
     # Save uploaded file
     try:
         with open(upload_path, "wb") as f:
             f.write(contents)
-        logger.info(f"Saved video upload: {upload_path} ({validation.file_size_mb}MB)")
+        logger.info(f"Task {task_id}: Saved upload ({validation.file_size_mb}MB)")
     except Exception as e:
         raise HTTPException(
             status_code=500,
@@ -245,7 +247,7 @@ async def upload_video(
 
     logger.info(
         f"Created video processing task: {task_id} "
-        f"(file={filename}, frames={validation.total_frames}, "
+        f"(frames={validation.total_frames}, "
         f"duration={validation.duration_seconds}s, mode={processing_options.identification_mode})"
     )
 
@@ -308,6 +310,7 @@ async def get_video_status(task_id: str) -> VideoTaskProgress:
         error=progress.error,
         filename=progress.filename,
         created_at=progress.created_at,
+        expires_at=progress.expires_at,
         options=VideoProcessingOptions(
             target_fps=progress.target_fps,
             identification_mode=progress.identification_mode,
@@ -364,6 +367,10 @@ async def download_video(task_id: str) -> FileResponse:
 async def delete_video_task(task_id: str) -> dict:
     r"""Delete a video processing task and its files.
 
+    Clients should call this as soon as they are done with a result; otherwise
+    the sweeper removes it ``video_settings.task_retention_minutes`` after
+    completion.
+
     :param task_id: Unique identifier of the task
     :return: Confirmation message
     :raises HTTPException: If task not found
@@ -380,22 +387,7 @@ async def delete_video_task(task_id: str) -> dict:
             detail=f"Task not found: {task_id}",
         )
 
-    # Clean up files
-    if progress.input_path and progress.input_path.exists():
-        try:
-            progress.input_path.unlink()
-            logger.debug(f"Deleted input file: {progress.input_path}")
-        except Exception as e:
-            logger.warning(f"Failed to delete input file: {e}")
-
-    if progress.output_path and progress.output_path.exists():
-        try:
-            progress.output_path.unlink()
-            logger.debug(f"Deleted output file: {progress.output_path}")
-        except Exception as e:
-            logger.warning(f"Failed to delete output file: {e}")
-
-    # Remove from store
+    delete_task_files(progress)
     task_store.delete(task_id)
 
     return {"message": f"Task {task_id} deleted successfully"}

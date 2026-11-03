@@ -2,11 +2,13 @@
 
 import threading
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, Literal, Optional
 
 from loguru import logger
+
+from src.api.config import video_settings
 
 
 @dataclass
@@ -59,6 +61,19 @@ class TaskProgress:
         if self.frames_total == 0:
             return 0.0
         return (self.frames_processed / self.frames_total) * 100.0
+
+    @property
+    def expires_at(self) -> Optional[datetime]:
+        r"""Time after which the task and its output are deleted.
+
+        :return: ``completed_at`` plus ``video_settings.task_retention_minutes``,
+            or ``None`` while the task is still queued or processing
+        """
+        if self.completed_at is None:
+            return None
+        return self.completed_at + timedelta(
+            minutes=video_settings.task_retention_minutes
+        )
 
     @property
     def elapsed_seconds(self) -> float:
@@ -180,31 +195,31 @@ class TaskStore:
         with self._lock:
             return dict(self._tasks)
 
-    def cleanup_old(self, max_age_hours: int = 24) -> int:
-        r"""Remove tasks older than the specified age.
+    def pop_expired(self, now: Optional[datetime] = None) -> list[TaskProgress]:
+        r"""Remove and return finished tasks whose retention window has passed.
 
-        :param max_age_hours: Maximum age of tasks to keep in hours
-        :return: Number of tasks removed
+        Tasks that are still queued or processing are never returned: the
+        processor owns them until it calls :meth:`TaskProgress.complete` or
+        :meth:`TaskProgress.fail`.
+
+        :param now: Reference time; defaults to the current UTC time
+        :return: The removed tasks, so the caller can delete their files
         """
-        now = datetime.now(timezone.utc)
-        max_age_seconds = max_age_hours * 3600
-        removed = 0
+        now = now or datetime.now(timezone.utc)
 
         with self._lock:
-            tasks_to_remove = []
-            for task_id, progress in self._tasks.items():
-                age = (now - progress.created_at).total_seconds()
-                if age > max_age_seconds:
-                    tasks_to_remove.append(task_id)
+            expired = [
+                progress
+                for progress in self._tasks.values()
+                if progress.expires_at is not None and progress.expires_at <= now
+            ]
+            for progress in expired:
+                del self._tasks[progress.task_id]
 
-            for task_id in tasks_to_remove:
-                del self._tasks[task_id]
-                removed += 1
+        if expired:
+            logger.info(f"Expired {len(expired)} finished video tasks")
 
-        if removed > 0:
-            logger.info(f"Cleaned up {removed} old tasks (max age: {max_age_hours}h)")
-
-        return removed
+        return expired
 
     def get_stats(self) -> Dict[str, int]:
         r"""Get statistics about tasks in the store.

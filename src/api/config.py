@@ -65,8 +65,9 @@ class VideoUploadSettings(BaseSettings):
     default_output_format: str = "mp4"
     high_quality_codec: str = "avc1"  # fourcc used when high_quality is requested
 
-    # Task management
-    task_cleanup_hours: int = 24
+    # Task management (zero retention: see src/api/tasks/cleanup.py)
+    task_retention_minutes: int = 15  # keep a finished task + output this long
+    cleanup_interval_seconds: int = 60  # how often the sweeper runs
 
 
 class VideoStreamSettings(BaseSettings):
