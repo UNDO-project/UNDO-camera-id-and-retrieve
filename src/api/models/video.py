@@ -68,6 +68,7 @@ class VideoTaskProgress(BaseModel):
     :param elapsed_seconds: Time elapsed since processing started
     :param output_url: URL to download the processed video (when completed)
     :param error: Error message if the task failed
+    :param expires_at: When the server deletes the task and its output
     """
 
     task_id: str = Field(..., description="Unique identifier for the task")
@@ -96,6 +97,10 @@ class VideoTaskProgress(BaseModel):
     filename: str = Field(default="", description="Original filename")
     created_at: Optional[datetime] = Field(
         None, description="Timestamp when the task was created"
+    )
+    expires_at: Optional[datetime] = Field(
+        None,
+        description="When the server deletes the task and its output (set once finished)",
     )
     options: Optional[VideoProcessingOptions] = Field(
         None, description="Processing options for this task"
