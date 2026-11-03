@@ -710,7 +710,15 @@ For processing pre-recorded videos, the API provides asynchronous batch processi
 - Configurable processing options (FPS, detection mode)
 - Optional high-quality (H.264) export; default output is MPEG-4 for compatibility
 - Background processing with progress tracking
-- Automatic cleanup after 24 hours
+- Zero data retention: uploads are deleted after processing, results 15 minutes after completion (see below)
+
+**Data retention:** the service keeps user data only as long as a request needs it.
+- The uploaded file is deleted as soon as processing ends, whether it succeeded or failed.
+- The annotated result is deleted `CIDAR_VIDEO_TASK_RETENTION_MINUTES` (default 15) after completion. The status response reports the deadline in `expires_at`. Clients should call `DELETE /api/v1/video-task/{task_id}` as soon as they have the result.
+- `output/video_uploads/` and `output/video_outputs/` are emptied on startup; the task store is in memory, so anything left there is an orphan.
+- Image identification requests never write crops to disk.
+- Files on disk and log lines carry only the task id, never the uploaded filename.
+- For deployment, mount the two video directories on an ephemeral volume or tmpfs so a restart wipes them and disk use is bounded.
 
 **Upload a video for processing:**
 ```bash
@@ -753,6 +761,7 @@ curl "http://localhost:8000/api/v1/video-status/abc-123-def-456"
   "elapsed_seconds": 110.5,
   "output_url": null,
   "filename": "surveillance_footage.mp4",
+  "expires_at": null,
   "options": {
     "target_fps": 10,
     "identification_mode": "full",
@@ -909,7 +918,8 @@ Configure the API server using environment variables with the `CIDAR_API_`, `CID
 | `CIDAR_VIDEO_MAX_DURATION_MINUTES` | Max video duration in minutes | `30` |
 | `CIDAR_VIDEO_DEFAULT_TARGET_FPS` | Default processing FPS | `15` |
 | `CIDAR_VIDEO_HIGH_QUALITY_CODEC` | OpenCV fourcc used when `high_quality` is requested | `avc1` |
-| `CIDAR_VIDEO_TASK_CLEANUP_HOURS` | Hours before task cleanup | `24` |
+| `CIDAR_VIDEO_TASK_RETENTION_MINUTES` | Minutes a finished task and its output are kept | `15` |
+| `CIDAR_VIDEO_CLEANUP_INTERVAL_SECONDS` | How often the retention sweeper runs | `60` |
 
 **Video Streaming Settings** (`CIDAR_STREAM_` prefix):
 
