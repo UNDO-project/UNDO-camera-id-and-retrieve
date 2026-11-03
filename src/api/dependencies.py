@@ -32,7 +32,8 @@ class ServiceState:
         """
         if self._service is None:
             logger.info("Initializing IdentificationService...")
-            self._service = IdentificationService()
+            # Zero retention: the API never persists query crops to disk.
+            self._service = IdentificationService(save_crops=False)
             logger.success("IdentificationService initialized successfully")
         return self._service
 
