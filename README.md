@@ -708,6 +708,7 @@ For processing pre-recorded videos, the API provides asynchronous batch processi
 **Features:**
 - Supports MP4, AVI, MOV, WebM formats
 - Configurable processing options (FPS, detection mode)
+- Optional high-quality (H.264) export; default output is MPEG-4 for compatibility
 - Background processing with progress tracking
 - Automatic cleanup after 24 hours
 
@@ -721,6 +722,11 @@ curl -X POST "http://localhost:8000/api/v1/process-video" \
 curl -X POST "http://localhost:8000/api/v1/process-video" \
   -F "file=@surveillance_footage.mp4" \
   -F 'options={"target_fps": 10, "identification_mode": "full", "output_format": "mp4"}'
+
+# High-quality (H.264) export; falls back to MPEG-4 if the encoder is unavailable
+curl -X POST "http://localhost:8000/api/v1/process-video" \
+  -F "file=@surveillance_footage.mp4" \
+  -F 'options={"high_quality": true}'
 
 # Response:
 {
@@ -750,7 +756,8 @@ curl "http://localhost:8000/api/v1/video-status/abc-123-def-456"
   "options": {
     "target_fps": 10,
     "identification_mode": "full",
-    "output_format": "mp4"
+    "output_format": "mp4",
+    "high_quality": false
   }
 }
 
@@ -901,6 +908,7 @@ Configure the API server using environment variables with the `CIDAR_API_`, `CID
 | `CIDAR_VIDEO_MAX_UPLOAD_SIZE_MB` | Max video upload size in MB | `500` |
 | `CIDAR_VIDEO_MAX_DURATION_MINUTES` | Max video duration in minutes | `30` |
 | `CIDAR_VIDEO_DEFAULT_TARGET_FPS` | Default processing FPS | `15` |
+| `CIDAR_VIDEO_HIGH_QUALITY_CODEC` | OpenCV fourcc used when `high_quality` is requested | `avc1` |
 | `CIDAR_VIDEO_TASK_CLEANUP_HOURS` | Hours before task cleanup | `24` |
 
 **Video Streaming Settings** (`CIDAR_STREAM_` prefix):

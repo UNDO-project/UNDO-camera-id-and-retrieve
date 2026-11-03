@@ -12,6 +12,7 @@ class VideoProcessingOptions(BaseModel):
     :param target_fps: Target frames per second for processing
     :param identification_mode: Processing mode (detect_only or full)
     :param output_format: Output video format
+    :param high_quality: Encode output with H.264 instead of the default MPEG-4
     """
 
     target_fps: int = Field(
@@ -27,6 +28,10 @@ class VideoProcessingOptions(BaseModel):
     output_format: Literal["mp4"] = Field(
         default="mp4",
         description="Output video format",
+    )
+    high_quality: bool = Field(
+        default=False,
+        description="Encode output with H.264 (falls back to MPEG-4 if unavailable)",
     )
 
 

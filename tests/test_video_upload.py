@@ -113,6 +113,7 @@ class TestVideoUploadEndpoint:
                 "target_fps": 10,
                 "identification_mode": "full",
                 "output_format": "mp4",
+                "high_quality": True,
             }
         )
 
@@ -135,6 +136,49 @@ class TestVideoUploadEndpoint:
         assert progress is not None
         assert progress.target_fps == 10
         assert progress.identification_mode == "full"
+        assert progress.high_quality is True
+
+    def test_upload_video_high_quality_defaults_false(
+        self,
+        test_client: TestClient,
+        temp_video_file: Path,
+        clean_task_store: TaskStore,
+        tmp_path: Path,
+    ):
+        """Test that omitting high_quality keeps the default (off)."""
+        uploads_dir = tmp_path / "video_uploads"
+        uploads_dir.mkdir(parents=True, exist_ok=True)
+
+        with patch("src.api.routes.video_upload.paths") as mock_paths:
+            mock_paths.video_uploads_dir = uploads_dir
+
+            with open(temp_video_file, "rb") as f:
+                response = test_client.post(
+                    "/api/v1/process-video",
+                    files={"file": ("test_video.mp4", f, "video/mp4")},
+                    data={"options": json.dumps({"target_fps": 15})},
+                )
+
+        assert response.status_code == 202
+        progress = clean_task_store.get(response.json()["task_id"])
+        assert progress.high_quality is False
+
+    def test_upload_video_invalid_high_quality(
+        self,
+        test_client: TestClient,
+        temp_video_file: Path,
+    ):
+        """Test rejection of a non-boolean high_quality value."""
+        options = json.dumps({"high_quality": "maybe"})
+
+        with open(temp_video_file, "rb") as f:
+            response = test_client.post(
+                "/api/v1/process-video",
+                files={"file": ("test_video.mp4", f, "video/mp4")},
+                data={"options": options},
+            )
+
+        assert response.status_code == 400
 
     def test_upload_video_invalid_extension(
         self,
@@ -226,6 +270,22 @@ class TestVideoStatusEndpoint:
         assert data["filename"] == "test.mp4"
         assert data["frames_total"] == 300
         assert data["progress_percent"] == 0.0
+        assert data["options"]["high_quality"] is False
+
+    def test_get_status_reports_high_quality(
+        self,
+        test_client: TestClient,
+        clean_task_store: TaskStore,
+    ):
+        """Test that the status endpoint echoes the requested high_quality flag."""
+        progress = clean_task_store.create("test-task-hq")
+        progress.high_quality = True
+        clean_task_store.update("test-task-hq", progress)
+
+        response = test_client.get("/api/v1/video-status/test-task-hq")
+
+        assert response.status_code == 200
+        assert response.json()["options"]["high_quality"] is True
 
     def test_get_status_processing_task(
         self,

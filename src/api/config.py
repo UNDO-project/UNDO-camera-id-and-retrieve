@@ -63,6 +63,7 @@ class VideoUploadSettings(BaseSettings):
     max_target_fps: int = 30
     min_target_fps: int = 1
     default_output_format: str = "mp4"
+    high_quality_codec: str = "avc1"  # fourcc used when high_quality is requested
 
     # Task management
     task_cleanup_hours: int = 24

@@ -169,7 +169,7 @@ async def upload_video(
         ```bash
         curl -X POST "http://localhost:8000/api/v1/process-video" \
           -F "file=@video.mp4" \
-          -F 'options={"target_fps": 15, "identification_mode": "detect_only"}'
+          -F 'options={"target_fps": 15, "identification_mode": "detect_only", "high_quality": true}'
         ```
     """
     # Parse processing options
@@ -240,6 +240,7 @@ async def upload_video(
     progress.target_fps = processing_options.target_fps
     progress.identification_mode = processing_options.identification_mode
     progress.output_format = processing_options.output_format
+    progress.high_quality = processing_options.high_quality
     task_store.update(task_id, progress)
 
     logger.info(
@@ -311,6 +312,7 @@ async def get_video_status(task_id: str) -> VideoTaskProgress:
             target_fps=progress.target_fps,
             identification_mode=progress.identification_mode,
             output_format=progress.output_format,
+            high_quality=progress.high_quality,
         ),
     )
 

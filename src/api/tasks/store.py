@@ -28,6 +28,7 @@ class TaskProgress:
     :param target_fps: Target frames per second for processing
     :param identification_mode: Processing mode
     :param output_format: Output video format
+    :param high_quality: Whether H.264 output was requested
     :param error: Error message if the task failed
     """
 
@@ -46,6 +47,7 @@ class TaskProgress:
     target_fps: int = 15
     identification_mode: Literal["detect_only", "full"] = "detect_only"
     output_format: str = "mp4"
+    high_quality: bool = False
     error: Optional[str] = None
 
     @property

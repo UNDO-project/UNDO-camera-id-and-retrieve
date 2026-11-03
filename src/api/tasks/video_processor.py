@@ -15,6 +15,7 @@ import cv2
 import numpy as np
 from loguru import logger
 
+from src.api.config import video_settings
 from src.api.tasks.store import task_store
 from src.config import paths
 from src.identification.async_service import AsyncIdentificationService
@@ -32,6 +33,7 @@ class VideoProcessingConfig:
     :param jpeg_quality: Quality for intermediate frame encoding
     :param top_k: Number of top matches to return per detection (full mode)
     :param min_similarity: Minimum similarity threshold for matches
+    :param high_quality: Encode output with H.264 instead of the default MPEG-4
     """
 
     target_fps: int = 15
@@ -40,6 +42,7 @@ class VideoProcessingConfig:
     jpeg_quality: int = 85
     top_k: int = 5
     min_similarity: float = 0.3
+    high_quality: bool = False
 
 
 class VideoProcessorTask:
@@ -145,14 +148,8 @@ class VideoProcessorTask:
 
             # Create output video writer
             output_path.parent.mkdir(parents=True, exist_ok=True)
-            fourcc = cv2.VideoWriter_fourcc(*"mp4v")
             output_fps = min(self.config.target_fps, source_fps)
-            writer = cv2.VideoWriter(
-                str(output_path), fourcc, output_fps, (width, height)
-            )
-
-            if not writer.isOpened():
-                raise RuntimeError(f"Failed to create output video: {output_path}")
+            writer = self._open_writer(output_path, output_fps, (width, height))
 
             # Process frames
             frame_num = 0
@@ -227,6 +224,38 @@ class VideoProcessorTask:
             if writer is not None:
                 writer.release()
 
+    def _open_writer(
+        self, output_path: Path, fps: float, size: tuple[int, int]
+    ) -> cv2.VideoWriter:
+        r"""Open the output video writer with the configured codec.
+
+        Uses ``video_settings.high_quality_codec`` (H.264 by default) when
+        ``high_quality`` is set, falling back to ``mp4v`` if that encoder is
+        unavailable in this OpenCV build.
+
+        :param output_path: Path where output video will be written
+        :param fps: Output frame rate
+        :param size: Output frame size as (width, height)
+        :return: Opened video writer
+        :raises RuntimeError: If no writer could be opened
+        """
+        codecs = ["mp4v"]
+        if self.config.high_quality:
+            codecs.insert(0, video_settings.high_quality_codec)
+
+        for codec in codecs:
+            fourcc = cv2.VideoWriter_fourcc(*codec)
+            writer = cv2.VideoWriter(str(output_path), fourcc, fps, size)
+            if writer.isOpened():
+                logger.info(f"Task {self.task_id}: Writing output with codec {codec}")
+                return writer
+            writer.release()
+            logger.warning(
+                f"Task {self.task_id}: Codec {codec} unavailable, trying fallback"
+            )
+
+        raise RuntimeError(f"Failed to create output video: {output_path}")
+
     async def _process_frame(self, frame: np.ndarray) -> np.ndarray:
         r"""Process a single frame with detection/identification.
 
@@ -295,6 +324,7 @@ async def run_video_processing_task(task_id: str) -> None:
         target_fps=progress.target_fps,
         identification_mode=progress.identification_mode,
         output_format=progress.output_format,
+        high_quality=progress.high_quality,
     )
 
     # Run processing
